@@ -164,7 +164,7 @@ SET @exists = (
     WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'assignments' AND COLUMN_NAME = 'visibility'
 );
 SET @query = IF(@exists = 0,
-    'ALTER TABLE assignments ADD COLUMN visibility ENUM(''draft'',''published'',''closed'') DEFAULT ''published''',
+    'ALTER TABLE assignments ADD COLUMN visibility ENUM(''draft'',''published'',''closed'',''deleted'') DEFAULT ''published''',
     'SELECT "visibility already exists" AS info'
 );
 PREPARE stmt FROM @query;

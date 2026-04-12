@@ -1342,9 +1342,7 @@ def teacher_analytics(cid):
     # Top performers: avg grade per student
     from collections import defaultdict
     student_scores = defaultdict(list)
-    student_names  = {}
     for r in graded:
-        student_names[r['full_name']] = r['full_name']
         student_scores[r['full_name']].append(r['final_grade'])
     top_performers = sorted(
         [{'name': n, 'avg': round(sum(v)/len(v), 1)} for n, v in student_scores.items()],
