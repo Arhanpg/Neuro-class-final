@@ -5,20 +5,21 @@
 .nc-grade-card { border-radius: 12px; border: 1px solid #e0e0e0; transition: transform .15s, box-shadow .15s; }
 .nc-grade-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.1); }
 .nc-grade-big { font-size: 2.2rem; font-weight: 900; line-height: 1; }
-.nc-progress-ring { width: 64px; height: 64px; flex-shrink: 0; }
 .nc-overall-card { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 16px; color: #fff; }
+.nc-pending-pulse { animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.criteria-chip { display:inline-block; background:#f0f4ff; border:1px solid #c8d8ff; border-radius:20px; padding:2px 10px; font-size:.75rem; margin:2px; color:#2c5fd4; }
 </style>
 
 <div class="container py-4" style="max-width:1060px">
   <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
-    <a href="{{ url_for('student_dashboard') }}" class="btn btn-outline-secondary btn-sm">← Dashboard</a>
-    <h2 class="mb-0 fw-bold">📊 My Grades</h2>
-    <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=0) }}" class="btn btn-sm btn-outline-warning ms-auto">🏆 Leaderboard</a>
+    <a href="{{ url_for('student_dashboard') }}" class="btn btn-outline-secondary btn-sm">&larr; Dashboard</a>
+    <h2 class="mb-0 fw-bold">&#128202; My Grades</h2>
   </div>
 
   {% if not all_submissions %}
   <div class="text-center py-5">
-    <div style="font-size:4rem">📭</div>
+    <div style="font-size:4rem">&#128205;</div>
     <h5 class="mt-3 text-muted">No submissions yet</h5>
     <p class="text-muted">Submit assignments to see your grades and AI feedback here.</p>
   </div>
@@ -34,20 +35,20 @@
   {% set overall_grade = 'A' if avg >= 90 else 'B' if avg >= 80 else 'C' if avg >= 70 else 'D' if avg >= 60 else 'F' %}
   <div class="nc-overall-card p-4 mb-4">
     <div class="row align-items-center">
-      <div class="col-md-3 text-center border-end border-white border-opacity-25">
+      <div class="col-6 col-md-3 text-center border-end border-white border-opacity-25">
         <div style="font-size:3.5rem;font-weight:900;color:{{ {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336'}.get(overall_grade,'#aaa') }}">{{ overall_grade }}</div>
         <div style="opacity:.7">Overall Grade</div>
       </div>
-      <div class="col-md-3 text-center border-end border-white border-opacity-25">
+      <div class="col-6 col-md-3 text-center border-end border-white border-opacity-25">
         <div style="font-size:2rem;font-weight:700">{{ avg }}</div>
         <div style="opacity:.7">Avg Score</div>
       </div>
-      <div class="col-md-3 text-center border-end border-white border-opacity-25">
+      <div class="col-6 col-md-3 text-center border-end border-white border-opacity-25">
         <div style="font-size:2rem;font-weight:700">{{ total_graded|length }}</div>
         <div style="opacity:.7">Graded</div>
       </div>
-      <div class="col-md-3 text-center">
-        <div style="font-size:2rem;font-weight:700">{{ assignment_subs|length + project_subs|length }}</div>
+      <div class="col-6 col-md-3 text-center">
+        <div style="font-size:2rem;font-weight:700">{{ (assignment_subs|length) + (project_subs|length) }}</div>
         <div style="opacity:.7">Total Submitted</div>
       </div>
     </div>
@@ -57,7 +58,7 @@
   <!-- Assignment Grades -->
   {% if assignment_subs %}
   <div class="d-flex align-items-center gap-2 mb-3">
-    <h5 class="mb-0 fw-bold">📝 Assignments</h5>
+    <h5 class="mb-0 fw-bold">&#128221; Assignments</h5>
     <span class="badge bg-secondary">{{ assignment_subs|length }}</span>
   </div>
   <div class="row g-3 mb-4">
@@ -76,24 +77,55 @@
           </div>
           <div class="text-center flex-shrink-0">
             <div class="nc-grade-big" style="color:{{ grade_color }}">{{ grade }}</div>
-            <div style="font-size:.8rem;color:#888">{{ final if final is not none else '—' }}/100</div>
+            <div style="font-size:.8rem;color:#888">{{ final if final is not none else '&#8212;' }}/{{ s.max_marks or 100 }}</div>
           </div>
         </div>
 
         <!-- Mini progress bar -->
         {% if final is not none %}
         <div class="mt-2 mb-2" style="background:#e9ecef;border-radius:100px;height:6px">
-          <div style="width:{{ final }}%;background:{{ grade_color }};border-radius:100px;height:6px;transition:width .6s"></div>
+          <div style="width:{{ [final, 100]|min }}%;background:{{ grade_color }};border-radius:100px;height:6px;transition:width .6s"></div>
+        </div>
+        {% endif %}
+
+        <!-- AI Pipeline mini display -->
+        {% if s.locked and s.ai_grade is not none %}
+        <div class="d-flex gap-1 my-2">
+          <span class="badge bg-success" style="font-size:.65rem">&#128196; Extracted</span>
+          <span class="badge bg-success" style="font-size:.65rem">&#128269; Relevant</span>
+          <span class="badge bg-success" style="font-size:.65rem">&#9878; Graded</span>
+          <span class="badge bg-dark" style="font-size:.65rem">&#128274; Locked</span>
+        </div>
+        {% endif %}
+
+        <!-- Criterion chips from AI feedback -->
+        {% if s.parsed_criteria %}
+        <div class="mt-1 mb-2">
+          {% for c in s.parsed_criteria[:3] %}
+            <span class="criteria-chip">{{ c[:50] }}</span>
+          {% endfor %}
+          {% if s.parsed_criteria|length > 3 %}
+            <span class="criteria-chip">+{{ s.parsed_criteria|length - 3 }} more</span>
+          {% endif %}
         </div>
         {% endif %}
 
         <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
-          {% if s.locked %}<span class="badge bg-dark" style="font-size:.72rem">🔒 Locked</span>{% endif %}
-          {% if s.teacher_grade is not none %}<span class="badge bg-warning text-dark" style="font-size:.72rem">👨‍🏫 Teacher Override</span>{% endif %}
+          {% if s.locked %}<span class="badge bg-dark" style="font-size:.72rem">&#128274; Locked</span>{% endif %}
+          {% if s.teacher_grade is not none %}<span class="badge bg-warning text-dark" style="font-size:.72rem">&#128104;&#8205;&#127979; Teacher Override</span>{% endif %}
           {% if final is not none %}
-          <a href="/classroom/{{ s.classroom_id }}/assignment/{{ s.assignment_id }}/result" class="btn btn-sm btn-outline-info" style="font-size:.78rem;padding:.2rem .6rem">View Feedback →</a>
+          <a href="{{ url_for('assignments.submission_result', sub_id=s.id) }}"
+             class="btn btn-sm btn-outline-info" style="font-size:.78rem;padding:.2rem .6rem">
+            View Full AI Feedback &rarr;
+          </a>
+          {% if s.classroom_id and s.assignment_id %}
+          <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=s.classroom_id, assignment_id=s.assignment_id) }}"
+             class="btn btn-sm btn-outline-warning" style="font-size:.78rem;padding:.2rem .6rem">
+            &#127942; Board
+          </a>
+          {% endif %}
           {% else %}
-          <span class="badge bg-warning text-dark nc-pending-pulse">⏳ Grading...</span>
+          <span class="badge bg-warning text-dark nc-pending-pulse">&#9203; Grading…</span>
           {% endif %}
         </div>
       </div>
@@ -106,7 +138,7 @@
   <!-- Project Grades -->
   {% if project_subs %}
   <div class="d-flex align-items-center gap-2 mb-3">
-    <h5 class="mb-0 fw-bold">🔬 Projects</h5>
+    <h5 class="mb-0 fw-bold">&#128300; Projects</h5>
     <span class="badge bg-secondary">{{ project_subs|length }}</span>
   </div>
   <div class="row g-3">
@@ -122,20 +154,26 @@
             <h6 class="mb-1 fw-semibold text-truncate">{{ s.project_title }}</h6>
             <small class="text-muted">{{ s.classroom_name }}</small><br>
             <small class="text-muted">{{ s.submitted_at.strftime('%d %b %Y') if s.submitted_at else '' }}</small>
-            {% if s.rejected %}<br><span class="badge bg-danger mt-1" style="font-size:.72rem">❌ Rejected — Score 0</span>{% endif %}
+            {% if s.rejected %}
+              <br><span class="badge bg-danger mt-1" style="font-size:.72rem">&#10060; Rejected (OFF-TOPIC) &mdash; Score 0</span>
+              <br><small class="text-danger" style="font-size:.75rem">The notebook relevance check failed: submission was not related to the course topic.</small>
+            {% endif %}
           </div>
           <div class="text-center flex-shrink-0">
             <div class="nc-grade-big" style="color:{{ grade_color }}">{{ grade }}</div>
-            <div style="font-size:.8rem;color:#888">{{ final if final is not none else '—' }}/100</div>
+            <div style="font-size:.8rem;color:#888">{{ final if final is not none else '&#8212;' }}/100</div>
           </div>
         </div>
         {% if final is not none %}
         <div class="mt-2" style="background:#e9ecef;border-radius:100px;height:6px">
-          <div style="width:{{ final }}%;background:{{ grade_color }};border-radius:100px;height:6px"></div>
+          <div style="width:{{ [final, 100]|min }}%;background:{{ grade_color }};border-radius:100px;height:6px"></div>
         </div>
         {% endif %}
-        <div class="d-flex align-items-center gap-2 mt-2">
-          {% if s.locked %}<span class="badge bg-dark" style="font-size:.72rem">🔒 Locked</span>{% endif %}
+        <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+          {% if s.locked %}<span class="badge bg-dark" style="font-size:.72rem">&#128274; Locked</span>{% endif %}
+          {% if final is not none and not s.rejected %}
+            <span class="badge bg-success" style="font-size:.72rem">&#129302; AI Evaluated</span>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -146,9 +184,4 @@
 
   {% endif %}
 </div>
-
-<style>
-.nc-pending-pulse { animation: pulse 1.5s infinite; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-</style>
 {% endblock %}
