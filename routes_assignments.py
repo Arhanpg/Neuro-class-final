@@ -883,6 +883,46 @@ def submission_result(sub_id):
 
 
 # ═══════════════════════════════════════════════════════
+#  STUDENT — MY GRADES PAGE
+# ═══════════════════════════════════════════════════════
+
+@assignments_bp.route('/my-grades')
+def grades():
+    """Student: view all their graded assignment submissions across classrooms."""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    cursor = _cursor()
+    cursor.execute(
+        '''SELECT s.id AS sub_id,
+                  s.ai_grade, s.ai_grade_label,
+                  s.teacher_grade, s.teacher_grade_label,
+                  s.submitted_at, s.locked,
+                  a.title AS assignment_title,
+                  a.max_marks,
+                  a.classroom_id,
+                  c.name AS classroom_name
+           FROM assignment_submissions s
+           JOIN assignments a ON s.assignment_id = a.id
+           JOIN classrooms c ON a.classroom_id = c.id
+           WHERE s.student_id = %s
+           ORDER BY s.submitted_at DESC''',
+        (session['user_id'],)
+    )
+    submissions = cursor.fetchall()
+
+    # Annotate with final score and grade label
+    for sub in submissions:
+        final = sub['teacher_grade'] if sub['teacher_grade'] is not None else sub['ai_grade']
+        sub['final_score'] = final
+        sub['final_label'] = sub['teacher_grade_label'] or sub['ai_grade_label'] or (
+            _grade_label(final) if final is not None else '—'
+        )
+
+    return render_template('assignments/grades.html', submissions=submissions)
+
+
+# ═══════════════════════════════════════════════════════
 #  LEADERBOARD
 # ═══════════════════════════════════════════════════════
 
