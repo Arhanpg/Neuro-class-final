@@ -1623,8 +1623,8 @@ def student_leaderboard():
     rows      = cursor.fetchall()
     my_id     = session['user_id']
     my_name   = session.get('full_name', '')
-    # Anonymize
-    counter   = 1
+    # Anonymize — counter only increments for other students so numbering is gap-free
+    counter = 1
     for r in rows:
         if r['student_id'] == my_id:
             r['display_name'] = my_name
@@ -1632,7 +1632,7 @@ def student_leaderboard():
         else:
             r['display_name'] = f'Student {counter:03d}'
             r['is_me']        = False
-        counter += 1
+            counter          += 1
     return render_template('student/student_leaderboard.html', rows=rows, my_id=my_id)
 
 
