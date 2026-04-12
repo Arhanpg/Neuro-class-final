@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}My Grades — NeuroClass{% endblock %}
+{% block extra_head %}
+<style>
+.grade-a{color:#437a22;font-weight:700} .grade-b{color:#2d5a8e;font-weight:700}
+.grade-c{color:#964219;font-weight:700} .grade-d{color:#c05a00;font-weight:700}
+.grade-f{color:#a12c7b;font-weight:700}
+.badge-locked{background:var(--color-warning-bg);color:var(--color-warning);font-size:var(--text-xs);padding:2px 8px;border-radius:var(--radius-full);font-weight:600}
+</style>
+{% endblock %}
+{% block content %}
+<div style="max-width:960px;margin:var(--space-8) auto;padding:0 var(--space-4)">
+  <a href="{{ url_for('student_dashboard') }}" class="btn btn-ghost btn-sm" style="margin-bottom:var(--space-4)">← Back to Dashboard</a>
+  <h1 style="font-size:var(--text-xl);margin-bottom:var(--space-6)">📋 My Grades</h1>
+
+  {% if submissions %}
+  <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);overflow:hidden">
+    <table style="width:100%;border-collapse:collapse;font-size:var(--text-sm)">
+      <thead>
+        <tr style="border-bottom:2px solid var(--color-border);background:var(--color-surface-offset)">
+          <th style="text-align:left;padding:var(--space-3) var(--space-4)">Classroom</th>
+          <th style="text-align:left;padding:var(--space-3) var(--space-4)">Assignment</th>
+          <th style="text-align:left;padding:var(--space-3) var(--space-4)">Submitted</th>
+          <th style="text-align:center;padding:var(--space-3) var(--space-4)">Score</th>
+          <th style="text-align:center;padding:var(--space-3) var(--space-4)">Grade</th>
+          <th style="text-align:center;padding:var(--space-3) var(--space-4)">Status</th>
+          <th style="text-align:center;padding:var(--space-3) var(--space-4)">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in submissions %}
+        {% set fg = s.final_grade %}
+        <tr style="border-bottom:1px solid var(--color-divider)">
+          <td style="padding:var(--space-3) var(--space-4)">{{ s.classroom_name }}</td>
+          <td style="padding:var(--space-3) var(--space-4);font-weight:500">{{ s.assignment_title }}</td>
+          <td style="padding:var(--space-3) var(--space-4);color:var(--color-text-muted);font-size:var(--text-xs)">
+            {{ s.submitted_at.strftime('%b %d, %Y') if s.submitted_at else '—' }}
+          </td>
+          <td style="padding:var(--space-3) var(--space-4);text-align:center">
+            {% if fg is not none %}{{ fg }} / {{ s.max_marks }}{% else %}⏳ Pending{% endif %}
+          </td>
+          <td style="padding:var(--space-3) var(--space-4);text-align:center">
+            {% if fg is not none %}
+            <span class="{% if fg >= 90 %}grade-a{% elif fg >= 80 %}grade-b{% elif fg >= 70 %}grade-c{% elif fg >= 60 %}grade-d{% else %}grade-f{% endif %}">
+              {% if fg >= 90 %}A{% elif fg >= 80 %}B{% elif fg >= 70 %}C{% elif fg >= 60 %}D{% else %}F{% endif %}
+            </span>
+            {% else %}—{% endif %}
+          </td>
+          <td style="padding:var(--space-3) var(--space-4);text-align:center">
+            {% if s.locked %}<span class="badge-locked">🔒 Locked</span>{% else %}<span style="color:var(--color-text-muted);font-size:var(--text-xs)">Open</span>{% endif %}
+          </td>
+          <td style="padding:var(--space-3) var(--space-4);text-align:center">
+            <a href="{{ url_for('student_view_assignment', aid=s.assignment_id) }}" class="btn btn-ghost btn-sm">View</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding:var(--space-10);text-align:center;color:var(--color-text-muted);background:var(--color-surface);border-radius:var(--radius-xl);border:1px solid var(--color-border)">
+    No submissions yet. Start by viewing an assignment in one of your classrooms.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

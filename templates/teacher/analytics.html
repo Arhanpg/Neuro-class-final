@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}Analytics — {{ classroom.name }}{% endblock %}
+{% block content %}
+<div style="max-width:900px;margin:var(--space-8) auto;padding:0 var(--space-4)">
+  <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-ghost btn-sm" style="margin-bottom:var(--space-4)">← Back to Classroom</a>
+  <h1 style="font-size:var(--text-xl);margin-bottom:var(--space-6)">📊 Analytics — {{ classroom.name }}</h1>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--space-4);margin-bottom:var(--space-8)">
+    {% for label, value, color in [
+      ('Avg Score', avg_score, 'var(--color-primary)'),
+      ('Total Submissions', total_subs, 'var(--color-secondary)'),
+      ('Completion Rate', completion_rate|string + '%', 'var(--color-success)')
+    ] %}
+    <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);padding:var(--space-5);text-align:center">
+      <div style="font-size:var(--text-2xl);font-weight:700;color:{{ color }}">{{ value }}</div>
+      <div style="color:var(--color-text-muted);font-size:var(--text-sm);margin-top:var(--space-1)">{{ label }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-6);margin-bottom:var(--space-8)">
+    <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);padding:var(--space-5)">
+      <h2 style="font-size:var(--text-lg);margin-bottom:var(--space-4)">Score Distribution</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:var(--text-sm)">
+        <thead>
+          <tr style="border-bottom:2px solid var(--color-border)">
+            <th style="text-align:left;padding:var(--space-2)">Range</th>
+            <th style="text-align:left;padding:var(--space-2)">Grade</th>
+            <th style="text-align:center;padding:var(--space-2)">Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for range_label, grade_label, key in [
+            ('90–100','A','90-100'),('80–89','B','80-89'),
+            ('70–79','C','70-79'),('60–69','D','60-69'),('0–59','F','0-59')
+          ] %}
+          <tr style="border-bottom:1px solid var(--color-divider)">
+            <td style="padding:var(--space-2)">{{ range_label }}</td>
+            <td style="padding:var(--space-2);font-weight:700">{{ grade_label }}</td>
+            <td style="padding:var(--space-2);text-align:center">{{ dist[key] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);padding:var(--space-5)">
+      <h2 style="font-size:var(--text-lg);margin-bottom:var(--space-4)">Top Performers</h2>
+      {% if top_performers %}
+      <table style="width:100%;border-collapse:collapse;font-size:var(--text-sm)">
+        <thead>
+          <tr style="border-bottom:2px solid var(--color-border)">
+            <th style="text-align:left;padding:var(--space-2)">#</th>
+            <th style="text-align:left;padding:var(--space-2)">Student</th>
+            <th style="text-align:center;padding:var(--space-2)">Avg Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in top_performers %}
+          <tr style="border-bottom:1px solid var(--color-divider)">
+            <td style="padding:var(--space-2);color:var(--color-text-muted)">{{ loop.index }}</td>
+            <td style="padding:var(--space-2);font-weight:500">{{ p.name }}</td>
+            <td style="padding:var(--space-2);text-align:center;font-weight:700;color:var(--color-primary)">{{ p.avg }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p style="color:var(--color-text-muted)">No graded submissions yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

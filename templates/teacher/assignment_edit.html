@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block title %}Edit Assignment — NeuroClass{% endblock %}
+{% block extra_head %}
+<style>
+.rubric-row{display:grid;grid-template-columns:1fr 120px 40px;gap:var(--space-2);align-items:center;margin-bottom:var(--space-2)}
+.rubric-remove{background:none;border:none;cursor:pointer;color:var(--color-error);font-size:1.2rem;padding:var(--space-1)}
+.weight-total{font-weight:700;font-size:var(--text-sm);padding:var(--space-2) var(--space-3);border-radius:var(--radius-md);display:inline-block}
+.weight-ok{background:var(--color-success-bg);color:var(--color-success)}
+.weight-bad{background:var(--color-error-bg);color:var(--color-error)}
+</style>
+{% endblock %}
+{% block content %}
+<div style="max-width:700px;margin:var(--space-8) auto;padding:0 var(--space-4)">
+  <a href="{{ url_for('view_classroom', classroom_id=assignment.classroom_id) }}" class="btn btn-ghost btn-sm" style="margin-bottom:var(--space-4)">← Back to Classroom</a>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-6)">
+    <h1 style="font-size:var(--text-xl)">Edit Assignment</h1>
+    <form method="post" action="{{ url_for('teacher_delete_assignment', aid=assignment.id) }}"
+          onsubmit="return confirm('Delete this assignment?')">
+      <button type="submit" class="btn btn-sm" style="background:var(--color-error-bg);color:var(--color-error);border:1px solid var(--color-error)">Delete Assignment</button>
+    </form>
+  </div>
+
+  <form method="post" style="display:flex;flex-direction:column;gap:var(--space-5)">
+    <div class="form-group">
+      <label class="form-label">Classroom</label>
+      <input type="hidden" name="classroom_id" value="{{ assignment.classroom_id }}">
+      <select class="form-select" disabled>
+        {% for c in classrooms %}
+        <option value="{{ c.id }}" {% if c.id == assignment.classroom_id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Title *</label>
+      <input type="text" name="title" class="form-input" required maxlength="255" value="{{ assignment.title }}">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <textarea name="description" class="form-textarea" rows="4">{{ assignment.description or '' }}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Rubric (weights must sum to 100)</label>
+      <div id="rubric-rows"></div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addRubricRow()" style="margin-top:var(--space-2)">+ Add Criterion</button>
+      <div style="margin-top:var(--space-2)">
+        Total: <span id="weight-total" class="weight-total weight-ok">0 / 100</span>
+      </div>
+      <input type="hidden" name="rubric_json" id="rubric_json" value="{{ assignment.rubric or '[]' }}">
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
+      <div class="form-group">
+        <label class="form-label">Due Date</label>
+        <input type="datetime-local" name="due_date" class="form-input"
+               value="{{ assignment.due_date.strftime('%Y-%m-%dT%H:%M') if assignment.due_date else '' }}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Max Attempts (1–5)</label>
+        <input type="number" name="max_attempts" class="form-input" min="1" max="5" value="{{ assignment.max_attempts or 1 }}">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Visibility</label>
+      <select name="visibility" class="form-select">
+        <option value="published" {% if assignment.visibility == 'published' %}selected{% endif %}>Published</option>
+        <option value="draft" {% if assignment.visibility == 'draft' %}selected{% endif %}>Draft</option>
+        <option value="closed" {% if assignment.visibility == 'closed' %}selected{% endif %}>Closed</option>
+      </select>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save Changes</button>
+  </form>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+let rubricRows = [];
+try { rubricRows = JSON.parse(document.getElementById('rubric_json').value) || []; } catch(e) { rubricRows = []; }
+rubricRows = rubricRows.map(r => ({name: r.name||'', weight: String(r.weight||'')}));
+
+function addRubricRow(name='', weight='') {
+  rubricRows.push({name, weight});
+  renderRows();
+}
+function removeRow(idx) { rubricRows.splice(idx, 1); renderRows(); }
+function renderRows() {
+  const c = document.getElementById('rubric-rows');
+  c.innerHTML = '';
+  rubricRows.forEach((r, i) => {
+    const d = document.createElement('div'); d.className = 'rubric-row';
+    d.innerHTML = `
+      <input type="text" class="form-input" placeholder="Criterion name" value="${r.name}"
+             oninput="rubricRows[${i}].name=this.value;updateTotal()">
+      <input type="number" class="form-input" placeholder="Weight %" min="0" max="100" value="${r.weight}"
+             oninput="rubricRows[${i}].weight=this.value;updateTotal()">
+      <button type="button" class="rubric-remove" onclick="removeRow(${i})">✕</button>`;
+    c.appendChild(d);
+  });
+  updateTotal();
+}
+function updateTotal() {
+  const total = rubricRows.reduce((s, r) => s + (parseFloat(r.weight)||0), 0);
+  const el = document.getElementById('weight-total');
+  el.textContent = `${total.toFixed(1)} / 100`;
+  el.className = 'weight-total ' + (Math.abs(total-100) < 0.01 ? 'weight-ok' : 'weight-bad');
+  document.getElementById('rubric_json').value = JSON.stringify(
+    rubricRows.filter(r => r.name).map(r => ({name: r.name, weight: parseFloat(r.weight)||0}))
+  );
+}
+renderRows();
+</script>
+{% endblock %}
