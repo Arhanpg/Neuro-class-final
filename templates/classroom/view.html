@@ -1,99 +1,282 @@
 {% extends 'base.html' %}
 {% block title %}{{ classroom.name }} — NeuroClass{% endblock %}
+
 {% block content %}
-<div class="dashboard-wrapper">
-    <div class="classroom-view-header">
-        <div class="classroom-view-info">
-            <a href="{{ url_for('dashboard') }}" class="back-link">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-                Dashboard
-            </a>
-            <h1>{{ classroom.name }}</h1>
-            {% if classroom.subject %}<span class="subject-badge large">{{ classroom.subject }}</span>{% endif %}
-            {% if classroom.description %}<p class="classroom-desc">{{ classroom.description }}</p>{% endif %}
-            <p class="text-muted">Instructor: <strong>{{ classroom.instructor_name }}</strong></p>
-        </div>
-        {% if session.role == 'instructor' %}
-        <div class="classroom-code-display">
-            <span class="code-label">SHARE CODE</span>
-            <span class="code-large">{{ classroom.code }}</span>
-            <button class="btn btn-outline btn-sm" onclick="copyCode('{{ classroom.code }}')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                Copy Code
-            </button>
-        </div>
+<div class="classroom-page">
+
+  <!-- Header -->
+  <div class="classroom-header">
+    <div>
+      <div class="classroom-subject">{{ classroom.subject or 'General' }}</div>
+      <h1 class="classroom-title">{{ classroom.name }}</h1>
+      <div class="classroom-meta">Instructor: <strong>{{ classroom.instructor_name }}</strong></div>
+    </div>
+    {% if session.role == 'instructor' %}
+    <div class="classroom-header-actions">
+      <div class="code-badge" id="classCode" title="Click to copy">{{ classroom.code }}</div>
+      <a href="/classroom/{{ classroom.id }}/upload_lectures" class="btn btn-primary">📚 Upload Lectures</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="chat">🤖 AI Chatbot</button>
+    <button class="tab-btn" data-tab="materials">📄 Materials</button>
+    <button class="tab-btn" data-tab="members">👥 Members</button>
+  </div>
+
+  <!-- TAB: AI CHATBOT -->
+  <div class="tab-panel active" id="tab-chat">
+    <div class="chatbot-container">
+
+      {% if session.role == 'instructor' %}
+      <div class="ai-status-bar">
+        {% if indexed %}
+          <span class="status-dot green"></span>
+          <span>AI is trained on your lecture notes. Chatbot is active for students.</span>
+        {% else %}
+          <span class="status-dot red"></span>
+          <span>AI is <strong>not trained</strong> yet. Upload PDFs and click "Train AI" below.</span>
+          <button class="btn btn-primary btn-sm" id="trainAiBtn" onclick="trainAI({{ classroom.id }})">⚡ Train AI Now</button>
         {% endif %}
-    </div>
+      </div>
+      {% else %}
+      <div class="ai-status-bar">
+        {% if indexed %}
+          <span class="status-dot green"></span>
+          <span>AI is trained on your course materials. Ask anything!</span>
+        {% else %}
+          <span class="status-dot yellow"></span>
+          <span>AI is ready (general knowledge). Course-specific training coming soon.</span>
+        {% endif %}
+      </div>
+      {% endif %}
 
-    <div class="classroom-tabs">
-        <div class="tab-list">
-            <button class="tab active" onclick="switchTab(this, 'overview')">Overview</button>
-            <button class="tab" onclick="switchTab(this, 'members')">Members ({{ members|length }})</button>
-            <button class="tab coming-soon" disabled>&#129504; AI Chatbot <span class="badge-soon">Soon</span></button>
-            <button class="tab coming-soon" disabled>&#128196; Assignments <span class="badge-soon">Soon</span></button>
-            <button class="tab coming-soon" disabled>&#127941; Leaderboard <span class="badge-soon">Soon</span></button>
+      <!-- Chat messages -->
+      <div class="chat-messages" id="chatMessages">
+        {% if not chat_history %}
+        <div class="chat-empty">
+          <div class="chat-empty-icon">🤖</div>
+          <p>Hi! I'm <strong>NeuroBot</strong>, your AI classroom assistant.</p>
+          <p>Ask me anything about the course material, deadlines, or study tips!</p>
         </div>
-
-        <div id="tab-overview" class="tab-panel active">
-            <div class="info-cards-row">
-                <div class="info-card">
-                    <div class="info-card-value">{{ members|length }}</div>
-                    <div class="info-card-label">Students Enrolled</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-card-value">{{ classroom.code }}</div>
-                    <div class="info-card-label">Class Code</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-card-value">{{ classroom.created_at.strftime('%b %Y') }}</div>
-                    <div class="info-card-label">Created</div>
-                </div>
-            </div>
-            <div class="coming-soon-section">
-                <div class="cs-feature">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                    <div><strong>AI Chatbot</strong><p>RAG-powered tutor trained on your lecture notes</p></div>
-                </div>
-                <div class="cs-feature">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
-                    <div><strong>Assignments & Grading</strong><p>AI-graded submissions with leaderboard</p></div>
-                </div>
-            </div>
-        </div>
-
-        <div id="tab-members" class="tab-panel">
-            {% if members %}
-            <div class="members-table-wrap">
-                <table class="members-table">
-                    <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Joined</th></tr></thead>
-                    <tbody>
-                    {% for m in members %}
-                    <tr>
-                        <td class="text-muted">{{ loop.index }}</td>
-                        <td><strong>{{ m.full_name }}</strong></td>
-                        <td class="text-muted">{{ m.email }}</td>
-                        <td class="text-muted">{{ m.joined_at.strftime('%b %d, %Y') }}</td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+        {% else %}
+          {% for msg in chat_history %}
+          <div class="chat-bubble {{ msg.role }}">
+            {% if msg.role == 'user' %}
+              <div class="bubble-meta">{{ msg.full_name }}</div>
             {% else %}
-            <div class="empty-state small">
-                <p>No students have joined yet. Share the code <strong>{{ classroom.code }}</strong> with your class.</p>
-            </div>
+              <div class="bubble-meta">NeuroBot</div>
             {% endif %}
-        </div>
+            <div class="bubble-text">{{ msg.message }}</div>
+            <div class="bubble-time">{{ msg.created_at.strftime('%H:%M') if msg.created_at else '' }}</div>
+          </div>
+          {% endfor %}
+        {% endif %}
+      </div>
+
+      <!-- Chat input -->
+      <div class="chat-input-bar">
+        <input
+          type="text"
+          id="chatInput"
+          class="chat-input"
+          placeholder="Ask a question about the course..."
+          autocomplete="off"
+        />
+        <button class="btn btn-primary" id="chatSendBtn" onclick="sendChat({{ classroom.id }})">
+          Send
+        </button>
+      </div>
     </div>
+  </div>
+
+  <!-- TAB: MATERIALS -->
+  <div class="tab-panel" id="tab-materials">
+    {% if session.role == 'instructor' %}
+    <div class="section-actions">
+      <a href="/classroom/{{ classroom.id }}/upload_lectures" class="btn btn-primary">+ Upload Lecture PDFs</a>
+    </div>
+    {% endif %}
+    {% if materials %}
+    <div class="materials-list">
+      {% for m in materials %}
+      <div class="material-item">
+        <span class="material-icon">📄</span>
+        <div class="material-info">
+          <div class="material-name">{{ m.original_name }}</div>
+          <div class="material-date">Uploaded {{ m.uploaded_at.strftime('%d %b %Y') if m.uploaded_at else '' }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-state-icon">📂</div>
+      <h3>No materials yet</h3>
+      {% if session.role == 'instructor' %}
+      <p>Upload lecture PDFs to train the AI and make them available to students.</p>
+      <a href="/classroom/{{ classroom.id }}/upload_lectures" class="btn btn-primary">Upload Now</a>
+      {% else %}
+      <p>Your instructor hasn't uploaded any materials yet.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- TAB: MEMBERS -->
+  <div class="tab-panel" id="tab-members">
+    <div class="members-count">{{ members|length }} student(s) enrolled</div>
+    {% if members %}
+    <div class="members-list">
+      {% for m in members %}
+      <div class="member-item">
+        <div class="member-avatar">{{ m.full_name[0].upper() }}</div>
+        <div class="member-info">
+          <div class="member-name">{{ m.full_name }}</div>
+          <div class="member-email">{{ m.email }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-state-icon">👥</div>
+      <h3>No students yet</h3>
+      <p>Share the code <strong>{{ classroom.code }}</strong> with your students.</p>
+    </div>
+    {% endif %}
+  </div>
+
 </div>
 {% endblock %}
-{% block extra_scripts %}
+
+{% block scripts %}
 <script>
-function switchTab(btn, tabId) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+// ── Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
-    document.getElementById('tab-' + tabId).classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Copy code
+const codeEl = document.getElementById('classCode');
+if (codeEl) {
+  codeEl.style.cursor = 'pointer';
+  codeEl.addEventListener('click', () => {
+    navigator.clipboard.writeText(codeEl.textContent.trim());
+    const orig = codeEl.textContent;
+    codeEl.textContent = 'Copied!';
+    setTimeout(() => codeEl.textContent = orig, 1500);
+  });
+}
+
+// ── Chat
+const chatMessages = document.getElementById('chatMessages');
+const chatInput    = document.getElementById('chatInput');
+
+function scrollToBottom() {
+  if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+scrollToBottom();
+
+function appendBubble(role, text, name) {
+  const empty = chatMessages.querySelector('.chat-empty');
+  if (empty) empty.remove();
+
+  const div = document.createElement('div');
+  div.className = `chat-bubble ${role}`;
+  div.innerHTML = `
+    <div class="bubble-meta">${name}</div>
+    <div class="bubble-text">${text.replace(/\n/g, '<br>')}</div>
+    <div class="bubble-time">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>
+  `;
+  chatMessages.appendChild(div);
+  scrollToBottom();
+}
+
+async function sendChat(classroomId) {
+  const q = chatInput.value.trim();
+  if (!q) return;
+
+  chatInput.value = '';
+  appendBubble('user', q, '{{ session.full_name }}');
+
+  // Loading indicator
+  const loading = document.createElement('div');
+  loading.className = 'chat-bubble assistant loading';
+  loading.innerHTML = '<div class="bubble-text"><span class="typing-dots"><span></span><span></span><span></span></span></div>';
+  chatMessages.appendChild(loading);
+  scrollToBottom();
+
+  const sendBtn = document.getElementById('chatSendBtn');
+  sendBtn.disabled = true;
+
+  try {
+    const res  = await fetch(`/classroom/${classroomId}/chat`, {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify({message: q}),
+    });
+    const data = await res.json();
+    loading.remove();
+    if (data.answer) {
+      appendBubble('assistant', data.answer, 'NeuroBot');
+    } else {
+      appendBubble('assistant', data.error || 'Something went wrong.', 'NeuroBot');
+    }
+  } catch(e) {
+    loading.remove();
+    appendBubble('assistant', 'Network error. Please try again.', 'NeuroBot');
+  } finally {
+    sendBtn.disabled = false;
+    chatInput.focus();
+  }
+}
+
+// Send on Enter
+if (chatInput) {
+  chatInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const classroomId = {{ classroom.id }};
+      sendChat(classroomId);
+    }
+  });
+}
+
+// ── Train AI
+async function trainAI(classroomId) {
+  const btn = document.getElementById('trainAiBtn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Training… (this may take 30–60s)';
+
+  try {
+    const res  = await fetch(`/classroom/${classroomId}/train_ai`, {method: 'POST'});
+    const data = await res.json();
+    if (data.ok) {
+      btn.textContent = `✅ Trained! (${data.pages} pages, ${data.chunks} chunks)`;
+      btn.style.background = 'var(--color-success)';
+      // Update status dot
+      const dot = document.querySelector('.status-dot.red');
+      if (dot) { dot.classList.replace('red','green'); }
+      const statusText = document.querySelector('.ai-status-bar span:last-of-type');
+      if (statusText) statusText.textContent = 'AI trained successfully! Students can now chat.';
+    } else {
+      btn.textContent = '❌ Failed: ' + (data.error || 'Unknown error');
+      btn.style.background = 'var(--color-error)';
+      btn.disabled = false;
+    }
+  } catch(e) {
+    btn.textContent = '❌ Network error';
+    btn.disabled = false;
+  }
 }
 </script>
 {% endblock %}
