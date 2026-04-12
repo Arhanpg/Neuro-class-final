@@ -1,19 +1,64 @@
 {% extends 'base.html' %}
 {% block title %}Submissions — {{ assignment.title }}{% endblock %}
 {% block content %}
+<style>
+.nc-override-input { width: 80px !important; }
+.nc-feedback-pre { white-space: pre-wrap; font-size: .83rem; line-height: 1.6; max-height: 500px; overflow-y: auto; }
+.nc-badge-A { background: #4CAF50; color: #fff; }
+.nc-badge-B { background: #00BCD4; color: #fff; }
+.nc-badge-C { background: #FFC107; color: #000; }
+.nc-badge-D { background: #FF9800; color: #fff; }
+.nc-badge-F { background: #f44336; color: #fff; }
+.nc-progress-tiny { height: 4px; border-radius: 100px; }
+</style>
+
 <div class="container-fluid py-4">
   <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
-    <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary btn-sm">← Back</a>
-    <h2 class="mb-0">Submissions</h2>
+    <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary btn-sm">← Back to Classroom</a>
+    <h2 class="mb-0 fw-bold">Submissions</h2>
     <span class="badge bg-primary">{{ assignment.title }}</span>
     <span class="badge bg-secondary">{{ submissions|length }} total</span>
+    <div class="ms-auto d-flex gap-2">
+      <a href="{{ url_for('assignments.classroom_analytics', classroom_id=classroom.id) }}" class="btn btn-sm btn-outline-info">📈 Analytics</a>
+      <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=classroom.id) }}" class="btn btn-sm btn-outline-warning">🏆 Leaderboard</a>
+    </div>
   </div>
 
-  <!-- Filter tabs -->
+  <!-- Summary KPIs -->
+  {% set graded_list = submissions | selectattr('ai_grade') | list %}
+  {% set avg = (graded_list | map(attribute='ai_grade') | sum / graded_list | length) | round(1) if graded_list else 0 %}
+  <div class="row g-3 mb-4">
+    <div class="col-md-3 col-6">
+      <div class="card shadow-sm text-center p-3" style="border-radius:10px">
+        <div style="font-size:2rem;font-weight:800">{{ submissions|length }}</div>
+        <div class="text-muted small">Total</div>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="card shadow-sm text-center p-3" style="border-radius:10px">
+        <div style="font-size:2rem;font-weight:800;color:#198754">{{ graded_list|length }}</div>
+        <div class="text-muted small">Graded</div>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="card shadow-sm text-center p-3" style="border-radius:10px">
+        <div style="font-size:2rem;font-weight:800;color:#ffc107">{{ submissions|length - graded_list|length }}</div>
+        <div class="text-muted small">Pending</div>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="card shadow-sm text-center p-3" style="border-radius:10px">
+        <div style="font-size:2rem;font-weight:800">{{ avg }}</div>
+        <div class="text-muted small">Avg Score</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter Tabs -->
   <ul class="nav nav-tabs mb-3" id="subTabs">
-    <li class="nav-item"><a class="nav-link active" data-filter="all" href="#">All</a></li>
-    <li class="nav-item"><a class="nav-link" data-filter="graded" href="#">Graded</a></li>
-    <li class="nav-item"><a class="nav-link" data-filter="ungraded" href="#">Pending</a></li>
+    <li class="nav-item"><a class="nav-link active" data-filter="all" href="#">All ({{ submissions|length }})</a></li>
+    <li class="nav-item"><a class="nav-link" data-filter="graded" href="#">Graded ({{ graded_list|length }})</a></li>
+    <li class="nav-item"><a class="nav-link" data-filter="ungraded" href="#">Pending ({{ submissions|length - graded_list|length }})</a></li>
     <li class="nav-item"><a class="nav-link" data-filter="locked" href="#">Locked</a></li>
   </ul>
 
@@ -22,9 +67,15 @@
     <table class="table table-hover align-middle" id="subsTable">
       <thead class="table-dark">
         <tr>
-          <th>#</th><th>Student</th><th>Submitted</th>
-          <th>AI Score</th><th>Teacher Override</th>
-          <th>Grade</th><th>Status</th><th>Actions</th>
+          <th>#</th>
+          <th>Student</th>
+          <th>Submitted</th>
+          <th>AI Score</th>
+          <th>Criterion Breakdown</th>
+          <th>Teacher Override</th>
+          <th>Grade</th>
+          <th>Status</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -33,31 +84,46 @@
       {% set grade_label = 'A' if final and final >= 90 else 'B' if final and final >= 80 else 'C' if final and final >= 70 else 'D' if final and final >= 60 else 'F' if final is not none else '—' %}
       <tr data-graded="{{ 'yes' if final is not none else 'no' }}"
           data-locked="{{ 'yes' if s.locked else 'no' }}">
-        <td>{{ loop.index }}</td>
+        <td class="text-muted">{{ loop.index }}</td>
         <td><strong>{{ s.student_name }}</strong></td>
         <td class="text-muted small">{{ s.submitted_at.strftime('%d %b %Y %H:%M') if s.submitted_at else '—' }}</td>
         <td>
           {% if s.ai_grade is not none %}
+          <div>
             <span class="badge {{ 'bg-success' if s.ai_grade >= 70 else 'bg-warning text-dark' if s.ai_grade >= 50 else 'bg-danger' }}">{{ s.ai_grade }}</span>
-          {% else %}<span class="text-muted">Pending...</span>{% endif %}
+            <div style="width:60px;background:#e9ecef;border-radius:100px;margin-top:3px" class="nc-progress-tiny">
+              <div style="width:{{ s.ai_grade }}%;background:{{ '#4CAF50' if s.ai_grade >= 70 else '#FFC107' if s.ai_grade >= 50 else '#f44336' }};border-radius:100px" class="nc-progress-tiny"></div>
+            </div>
+          </div>
+          {% else %}<span class="text-muted small">⏳ Pending...</span>{% endif %}
         </td>
         <td>
-          <div class="d-flex gap-2">
-            <input type="number" class="form-control form-control-sm override-input"
+          {% if s.ai_feedback and 'CRITERION_BREAKDOWN:' in s.ai_feedback %}
+          <button class="btn btn-xs btn-outline-secondary" style="font-size:.75rem;padding:.15rem .4rem" onclick="showBreakdown('{{ s.id }}', `{{ (s.ai_feedback.split('CRITERION_BREAKDOWN:')[1].split('SCORE:')[0][:300] if 'CRITERION_BREAKDOWN:' in (s.ai_feedback or '') else '')|replace('\n','\\n')|replace('`','\`')|replace('"','&quot;') }}`)">View</button>
+          {% else %}<span class="text-muted" style="font-size:.8rem">—</span>{% endif %}
+        </td>
+        <td>
+          <div class="d-flex gap-1">
+            <input type="number" class="form-control form-control-sm nc-override-input override-input"
               value="{{ s.teacher_grade or '' }}" min="0" max="{{ assignment.max_marks }}"
-              style="width:80px" placeholder="—" data-sub-id="{{ s.id }}">
-            <button class="btn btn-sm btn-outline-primary save-override" data-sub-id="{{ s.id }}">Save</button>
+              placeholder="—" data-sub-id="{{ s.id }}">
+            <button class="btn btn-sm btn-outline-primary save-override" data-sub-id="{{ s.id }}"
+              style="white-space:nowrap;font-size:.8rem">Save</button>
           </div>
         </td>
         <td>
-          <span class="badge {{ {'A':'bg-success','B':'bg-info','C':'bg-warning text-dark','D':'bg-orange','F':'bg-danger'}.get(grade_label,'bg-secondary') }}">{{ grade_label }}</span>
+          {% if grade_label != '—' %}
+          <span class="badge nc-badge-{{ grade_label }}">{{ grade_label }}</span>
+          {% else %}<span class="text-muted">—</span>{% endif %}
         </td>
         <td>
           {% if s.locked %}<span class="badge bg-dark">🔒 Locked</span>
           {% else %}<span class="badge bg-secondary">Open</span>{% endif %}
         </td>
         <td>
-          <button class="btn btn-sm btn-outline-info view-feedback" data-feedback="{{ (s.ai_feedback or 'No feedback yet')|e }}" data-student="{{ s.student_name }}">View Feedback</button>
+          <button class="btn btn-sm btn-outline-info view-feedback"
+            data-feedback="{{ (s.ai_feedback or 'No feedback yet')|e }}"
+            data-student="{{ s.student_name }}" style="font-size:.8rem">Feedback</button>
         </td>
       </tr>
       {% endfor %}
@@ -67,7 +133,7 @@
   {% else %}
   <div class="text-center py-5 text-muted">
     <div style="font-size:3rem">📭</div>
-    <p>No submissions yet.</p>
+    <p class="mt-2">No submissions yet.</p>
   </div>
   {% endif %}
 </div>
@@ -77,10 +143,25 @@
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Feedback — <span id="fbStudentName"></span></h5>
+        <h5 class="modal-title">AI Feedback — <span id="fbStudentName"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body"><pre id="fbContent" class="small" style="white-space:pre-wrap"></pre></div>
+      <div class="modal-body">
+        <!-- Parsed sections -->
+        <div id="fbParsed"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Breakdown Tooltip -->
+<div class="modal fade" id="breakdownModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Criterion Breakdown</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body"><pre id="breakdownContent" class="nc-feedback-pre"></pre></div>
     </div>
   </div>
 </div>
@@ -102,29 +183,59 @@ document.querySelectorAll('[data-filter]').forEach(tab => {
   });
 });
 
-// Override grade
+// Save override grade
 document.querySelectorAll('.save-override').forEach(btn => {
   btn.addEventListener('click', () => {
     const id = btn.dataset.subId;
     const val = document.querySelector(`.override-input[data-sub-id="${id}"]`).value;
+    const feedbackInput = document.querySelector(`.feedback-input[data-sub-id="${id}"]`);
+    const fb = feedbackInput ? feedbackInput.value : '';
+    btn.textContent = '...';
+    btn.disabled = true;
     fetch(`/assignment/submission/${id}/override`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({grade: parseInt(val), feedback: ''})
+      body: JSON.stringify({grade: parseInt(val), feedback: fb})
     }).then(r => r.json()).then(d => {
-      if (d.ok) btn.textContent = '✓ Saved';
-      setTimeout(() => btn.textContent = 'Save', 2000);
+      btn.textContent = d.ok ? '✓ Saved' : '✗ Error';
+      btn.disabled = false;
+      setTimeout(() => btn.textContent = 'Save', 2500);
     });
   });
 });
 
-// View feedback
+// Parse and display structured feedback
+function parseFeedback(text) {
+  const sections = [
+    { key: 'CRITERION_BREAKDOWN:', label: '📊 Criterion Breakdown', next: 'SCORE:' },
+    { key: 'STRENGTHS:', label: '💪 Strengths', next: 'WEAKNESSES:' },
+    { key: 'WEAKNESSES:', label: '⚠️ Weaknesses', next: 'IMPROVEMENT_SUGGESTIONS:' },
+    { key: 'IMPROVEMENT_SUGGESTIONS:', label: '🚀 Suggestions', next: 'DETAILED_FEEDBACK:' },
+    { key: 'DETAILED_FEEDBACK:', label: '📄 Detailed Feedback', next: null },
+  ];
+  let html = '';
+  for (const s of sections) {
+    if (!text.includes(s.key)) continue;
+    let content = text.split(s.key)[1];
+    if (s.next && text.includes(s.next)) content = content.split(s.next)[0];
+    content = content.trim();
+    if (!content) continue;
+    html += `<div class="mb-3"><strong>${s.label}</strong><pre class="nc-feedback-pre mt-1" style="background:#f8f9fa;padding:.75rem;border-radius:8px">${content.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre></div>`;
+  }
+  return html || `<pre class="nc-feedback-pre">${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>`;
+}
+
 document.querySelectorAll('.view-feedback').forEach(btn => {
   btn.addEventListener('click', () => {
     document.getElementById('fbStudentName').textContent = btn.dataset.student;
-    document.getElementById('fbContent').textContent = btn.dataset.feedback;
+    document.getElementById('fbParsed').innerHTML = parseFeedback(btn.dataset.feedback);
     new bootstrap.Modal(document.getElementById('feedbackModal')).show();
   });
 });
+
+function showBreakdown(id, text) {
+  document.getElementById('breakdownContent').textContent = text.replace(/\\n/g, '\n');
+  new bootstrap.Modal(document.getElementById('breakdownModal')).show();
+}
 </script>
 {% endblock %}

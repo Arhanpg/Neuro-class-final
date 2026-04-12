@@ -1,84 +1,192 @@
 {% extends 'base.html' %}
 {% block title %}Project Advisory — {{ project.title }}{% endblock %}
 {% block content %}
+<style>
+.nc-advisory-card { border-radius: 14px; border: 1px solid #dee2e6; }
+.nc-advisory-section { padding: 1rem 1.25rem; border-bottom: 1px solid #f0f0f0; }
+.nc-advisory-section:last-child { border-bottom: none; }
+.nc-advisory-section h6 { font-weight: 700; margin-bottom: .4rem; font-size: .9rem; }
+.nc-completion-ring { position: relative; display: inline-block; }
+.nc-advisory-step { display: flex; gap: .75rem; padding: .5rem 0; }
+.nc-step-num { width: 24px; height: 24px; border-radius: 50%; background: #0d6efd; color: #fff; display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; flex-shrink: 0; margin-top: .1rem; }
+.nc-hero-advisory { background: linear-gradient(135deg, #0f2027, #203a43, #2c5364); border-radius: 16px; color: #fff; padding: 2rem; margin-bottom: 1.5rem; }
+.nc-not-locked { display: inline-flex; align-items: center; gap: .5rem; background: #d1e7dd; color: #0a3622; padding: .25rem .75rem; border-radius: 20px; font-size: .82rem; font-weight: 600; }
+</style>
+
 <div class="container py-4" style="max-width:900px">
-  <div class="d-flex align-items-center gap-3 mb-4">
+  <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
     <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary btn-sm">← Back</a>
-    <h2 class="mb-0">🔍 Project Advisory</h2>
-    <span class="badge bg-info">Advisory Mode</span>
+    <h2 class="mb-0 fw-bold">🔭 Project Advisory</h2>
+    <span class="badge bg-primary">{{ project.title }}</span>
+    <span class="nc-not-locked">✅ Not Locked — Advisory Only</span>
   </div>
 
-  <div class="alert alert-info">ℹ️ This is <strong>advisory only</strong>. Your submission is NOT locked. Use this to improve before final submission.</div>
+  <!-- Hero -->
+  <div class="nc-hero-advisory">
+    <div class="row">
+      <div class="col-md-8">
+        <h4 class="fw-bold mb-1">Get AI Feedback Before Submitting</h4>
+        <p class="mb-0" style="opacity:.8">This advisory analysis does <strong>NOT</strong> lock your submission. Use it to understand your current progress, what's missing, and your estimated grade if you submitted now. You can run it multiple times.</p>
+      </div>
+      <div class="col-md-4 d-flex align-items-center justify-content-center mt-3 mt-md-0">
+        <div class="text-center">
+          <div style="font-size:2.5rem">🤖</div>
+          <div style="opacity:.7;font-size:.9rem">AI Mentor Mode</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-  {% if not analysis %}
-  <div class="card shadow-sm mb-4">
-    <div class="card-header fw-semibold">📋 {{ project.title }}</div>
+  <!-- Project Info -->
+  <div class="card nc-advisory-card shadow-sm mb-4">
+    <div class="card-header fw-semibold bg-light">📋 Project Requirements</div>
     <div class="card-body">
-      <p class="text-muted">{{ project.description or 'No description.' }}</p>
+      <div style="white-space:pre-wrap;line-height:1.7">{{ project.description or project.assign_text or 'No description provided.' }}</div>
+      {% if project.rubric %}
+      <hr>
+      <strong class="small">Grading Rubric:</strong>
+      <div class="mt-2">
+        {% for line in project.rubric.split('\n') if line.strip() %}
+        {% set parts = line.split(':') %}
+        <span class="badge bg-light text-dark border me-1 mb-1" style="font-size:.82rem">{{ parts[0].strip() }}{% if parts|length > 1 %}: {{ parts[1].strip() }}{% endif %}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Advisory Form -->
+  <div class="card nc-advisory-card shadow-sm mb-4">
+    <div class="card-header fw-semibold bg-light">🔍 Analyze Your Repository</div>
+    <div class="card-body">
       <form method="POST">
         <div class="mb-3">
-          <label class="form-label">Your GitHub Repository URL</label>
-          <input type="url" name="repo_url" class="form-control" placeholder="https://github.com/username/repo" required>
+          <label class="form-label fw-semibold">GitHub Repository URL</label>
+          <input type="url" name="repo_url" class="form-control" required
+            placeholder="https://github.com/username/your-project-repo"
+            value="{{ request.form.get('repo_url', '') }}">
+          <div class="form-text">Repository must be <strong>public</strong>. The AI will clone and read your code, file structure, commits, and README.</div>
         </div>
-        <button type="submit" class="btn btn-primary" id="analyzeBtn">
-          🤖 Analyze My Project
+        <div class="alert alert-light border small">
+          <strong>Advisory Analysis includes:</strong>
+          <ul class="mb-0 mt-1">
+            <li>📁 File structure review</li>
+            <li>📝 Last 20 commits summary</li>
+            <li>✅ What is done well (rubric criteria met)</li>
+            <li>⚠️ What is missing or incomplete</li>
+            <li>🗺️ Next 3-5 numbered action steps</li>
+            <li>🎓 Estimated grade <em>if submitted now</em></li>
+          </ul>
+        </div>
+        <button type="submit" class="btn btn-primary fw-bold" id="advisoryBtn">
+          🔍 Analyze Repository (Advisory)
         </button>
       </form>
     </div>
   </div>
-  {% else %}
-  {% set a = analysis %}
 
-  <!-- Completion percentage -->
-  {% set pct = 0 %}
-  {% if 'COMPLETION_PERCENTAGE:' in a %}
-    {% set pct = a.split('COMPLETION_PERCENTAGE:')[1].split('\n')[0].strip()|int %}
-  {% endif %}
-  <div class="card mb-4 shadow-sm">
-    <div class="card-body">
-      <div class="d-flex justify-content-between mb-2">
-        <strong>Completion</strong><strong>{{ pct }}%</strong>
-      </div>
-      <div class="progress" style="height:24px">
-        <div class="progress-bar {{ 'bg-success' if pct >= 70 else 'bg-warning' if pct >= 40 else 'bg-danger' }}"
-          style="width:{{ pct }}%">{{ pct }}%</div>
-      </div>
+  <!-- Advisory Result -->
+  {% if analysis %}
+  <div class="card nc-advisory-card shadow-sm">
+    <div class="card-header fw-semibold" style="background:#e7f1ff">
+      🤖 AI Advisory Report
+      <span class="badge bg-info ms-2">Not Locked</span>
+    </div>
+    <div class="card-body p-0">
+
+      {% macro advisory_section(key, label, next_key=None) %}
+        {% if key in analysis %}
+        {% set content = analysis.split(key)[1] %}
+        {% if next_key and next_key in content %}{% set content = content.split(next_key)[0] %}{% endif %}
+        {% set content = content.strip().lstrip(':').strip() %}
+        <div class="nc-advisory-section">
+          <h6>{{ label }}</h6>
+          <div class="small" style="white-space:pre-wrap;line-height:1.7">{{ content }}</div>
+        </div>
+        {% endif %}
+      {% endmacro %}
+
+      {% set has_structured = 'COMPLETION_PERCENTAGE' in analysis or 'CURRENT_STATUS' in analysis %}
+
+      {% if has_structured %}
+        {# Completion Percentage #}
+        {% if 'COMPLETION_PERCENTAGE' in analysis %}
+        {% set cp_raw = analysis.split('COMPLETION_PERCENTAGE')[1].lstrip(':').strip()[:10] %}
+        {% set cp_num = cp_raw.split()[0]|replace('%','')|float(0)|round|int %}
+        <div class="nc-advisory-section d-flex align-items-center gap-4">
+          <div>
+            <h6>📊 Completion Estimate</h6>
+            <div style="font-size:3rem;font-weight:900;color:{{ '#4CAF50' if cp_num >= 70 else '#FFC107' if cp_num >= 40 else '#f44336' }}">{{ cp_num }}%</div>
+          </div>
+          <div style="flex:1;background:#e9ecef;border-radius:100px;height:16px">
+            <div style="width:{{ cp_num }}%;background:{{ '#4CAF50' if cp_num >= 70 else '#FFC107' if cp_num >= 40 else '#f44336' }};border-radius:100px;height:16px;transition:width .6s"></div>
+          </div>
+        </div>
+        {% endif %}
+
+        {{ advisory_section('CURRENT_STATUS', '📌 Current Status', 'WHAT_IS_DONE_WELL') }}
+        {{ advisory_section('WHAT_IS_DONE_WELL', '✅ What Is Done Well', 'WHAT_IS_MISSING') }}
+        {{ advisory_section('WHAT_IS_MISSING', '⚠️ What Is Missing', 'NEXT_STEPS') }}
+
+        {# Next Steps as numbered list #}
+        {% if 'NEXT_STEPS' in analysis %}
+        {% set ns_raw = analysis.split('NEXT_STEPS')[1].lstrip(':').strip() %}
+        {% set ns_content = ns_raw.split('DIRECTION_SUGGESTION')[0].split('ESTIMATED_GRADE')[0].strip() %}
+        <div class="nc-advisory-section">
+          <h6>🗺️ Next Steps</h6>
+          {% for line in ns_content.split('\n') if line.strip() %}
+          <div class="nc-advisory-step">
+            {% set l = line.strip() %}
+            {% if l[0].isdigit() %}
+            <div class="nc-step-num">{{ l[0] }}</div>
+            <div class="small">{{ l[1:].lstrip('. ') }}</div>
+            {% else %}
+            <div class="small">{{ l.lstrip('- ') }}</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {{ advisory_section('DIRECTION_SUGGESTION', '💡 Direction Suggestion', 'ESTIMATED_GRADE') }}
+
+        {# Estimated grade #}
+        {% if 'ESTIMATED_GRADE' in analysis %}
+        {% set eg_raw = analysis.split('ESTIMATED_GRADE')[1].lstrip(':').strip()[:200] %}
+        {% set eg_grade = eg_raw[0] if eg_raw else '?' %}
+        <div class="nc-advisory-section">
+          <h6>🎓 Estimated Grade If Submitted Now</h6>
+          <div class="d-flex align-items-center gap-3">
+            <div style="font-size:2.5rem;font-weight:900;color:{{ {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336'}.get(eg_grade,'#aaa') }}">{{ eg_grade }}</div>
+            <div class="small text-muted">{{ eg_raw[1:].lstrip('/:').strip()[:150] }}</div>
+          </div>
+        </div>
+        {% endif %}
+
+      {% else %}
+        {# Fallback: show raw analysis #}
+        <div class="nc-advisory-section">
+          <pre class="small mb-0" style="white-space:pre-wrap;line-height:1.7">{{ analysis }}</pre>
+        </div>
+      {% endif %}
+
     </div>
   </div>
 
-  {% if 'ESTIMATED_GRADE_IF_SUBMITTED_NOW:' in a %}
-  <div class="alert alert-secondary">
-    📊 <strong>Estimated Grade If Submitted Now:</strong>
-    {{ a.split('ESTIMATED_GRADE_IF_SUBMITTED_NOW:')[1].split('\n')[0].strip() }}
-  </div>
-  {% endif %}
-
-  <div class="row g-3 mb-3">
-    <div class="col-md-6">
-      <div class="card shadow-sm border-success h-100">
-        <div class="card-header fw-semibold text-success">✅ What's Done Well</div>
-        <div class="card-body small"><pre style="white-space:pre-wrap">{% if 'WHAT_IS_DONE_WELL:' in a %}{{ a.split('WHAT_IS_DONE_WELL:')[1].split('WHAT_IS_MISSING:')[0].strip() }}{% else %}—{% endif %}</pre></div>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="card shadow-sm border-warning h-100">
-        <div class="card-header fw-semibold text-warning">⚠️ What's Missing</div>
-        <div class="card-body small"><pre style="white-space:pre-wrap">{% if 'WHAT_IS_MISSING:' in a %}{{ a.split('WHAT_IS_MISSING:')[1].split('NEXT_STEPS:')[0].strip() }}{% else %}—{% endif %}</pre></div>
-      </div>
-    </div>
-  </div>
-
-  {% if 'NEXT_STEPS:' in a %}
-  <div class="card mb-3 shadow-sm">
-    <div class="card-header fw-semibold">🚀 Next Steps</div>
-    <div class="card-body small"><pre style="white-space:pre-wrap">{{ a.split('NEXT_STEPS:')[1].split('ESTIMATED_GRADE')[0].strip() }}</pre></div>
-  </div>
-  {% endif %}
-
-  <div class="d-flex gap-2">
-    <form method="POST"><button type="submit" class="btn btn-outline-primary">🔄 Re-Analyze</button></form>
-    <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-success">Submit Final →</a>
+  <div class="d-flex gap-2 mt-3">
+    <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary btn-sm">← Back to Classroom</a>
+    <button class="btn btn-outline-warning btn-sm" onclick="window.scrollTo({top:0,behavior:'smooth'})">🔄 Run Another Analysis</button>
   </div>
   {% endif %}
 </div>
+
+<script>
+document.querySelector('form')?.addEventListener('submit', () => {
+  const btn = document.getElementById('advisoryBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Cloning & analyzing repo... (~60s)';
+  }
+});
+</script>
 {% endblock %}

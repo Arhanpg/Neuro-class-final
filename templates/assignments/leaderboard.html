@@ -1,0 +1,147 @@
+{% extends 'base.html' %}
+{% block title %}Leaderboard{% endblock %}
+{% block content %}
+<style>
+.nc-lb-card { border-radius: 14px; overflow: hidden; }
+.nc-medal-1 { color: #FFD700; font-size: 1.4rem; }
+.nc-medal-2 { color: #C0C0C0; font-size: 1.4rem; }
+.nc-medal-3 { color: #CD7F32; font-size: 1.4rem; }
+.nc-rank-num { font-size: .9rem; color: #888; font-weight: 600; min-width: 32px; text-align: center; }
+.nc-lb-row { display: flex; align-items: center; gap: 1rem; padding: .75rem 1.25rem; border-bottom: 1px solid #f0f0f0; transition: background .12s; }
+.nc-lb-row:last-child { border-bottom: none; }
+.nc-lb-row:hover { background: #f8f9fa; }
+.nc-lb-row.you { background: linear-gradient(90deg, #e7f1ff, #fff); border-left: 3px solid #0d6efd; }
+.nc-lb-score { font-size: 1.3rem; font-weight: 800; min-width: 56px; text-align: right; }
+.nc-lb-grade { font-size: .8rem; padding: .15rem .5rem; border-radius: 20px; font-weight: 700; }
+.nc-tab-btn { padding: .4rem 1.2rem; border-radius: 8px; border: 2px solid #dee2e6; cursor: pointer; font-weight: 600; background: #fff; transition: all .15s; }
+.nc-tab-btn.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+.nc-hero { background: linear-gradient(135deg, #0f0c29, #302b63); border-radius: 16px; padding: 2rem; color: #fff; margin-bottom: 1.5rem; }
+</style>
+
+<div class="container py-4" style="max-width:900px">
+  {% if classroom_id and classroom_id > 0 %}
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{{ url_for('view_classroom', classroom_id=classroom_id) }}" class="btn btn-outline-secondary btn-sm">← Back to Classroom</a>
+    <h2 class="mb-0 fw-bold">🏆 Leaderboard</h2>
+    {% if classroom %}<span class="badge bg-primary">{{ classroom.name }}</span>{% endif %}
+  </div>
+  {% else %}
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{{ url_for('student_dashboard') }}" class="btn btn-outline-secondary btn-sm">← Dashboard</a>
+    <h2 class="mb-0 fw-bold">🏆 Global Leaderboard</h2>
+  </div>
+  {% endif %}
+
+  <!-- Hero Banner -->
+  <div class="nc-hero">
+    <div class="row align-items-center">
+      <div class="col-md-8">
+        <h4 class="fw-bold mb-1">Class Rankings</h4>
+        <p class="mb-0" style="opacity:.7">Students are ranked by average score across all assignments. Top performers are shown with 🥇🥈🥉 medals. Your own rank is highlighted in blue.</p>
+      </div>
+      <div class="col-md-4 text-center mt-3 mt-md-0">
+        <div style="font-size:3rem">{{ assignment_leaderboard|length + project_leaderboard|length }}</div>
+        <div style="opacity:.7">Students ranked</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Type Tabs -->
+  <div class="d-flex gap-2 mb-4">
+    <button class="nc-tab-btn active" onclick="showLB('assignments', this)">📝 Assignments</button>
+    <button class="nc-tab-btn" onclick="showLB('projects', this)">🔬 Projects</button>
+  </div>
+
+  <!-- Assignments Leaderboard -->
+  <div id="lb-assignments">
+    {% if assignment_leaderboard %}
+    <div class="card nc-lb-card shadow-sm">
+      <div class="card-header fw-semibold bg-light d-flex justify-content-between">
+        <span>📝 Assignment Rankings</span>
+        <span class="badge bg-secondary">{{ assignment_leaderboard|length }} students</span>
+      </div>
+      <div class="card-body p-0">
+        {% for entry in assignment_leaderboard %}
+        <div class="nc-lb-row {{ 'you' if entry.is_you else '' }}">
+          <div class="nc-rank-num">
+            {% if loop.index == 1 %}<span class="nc-medal-1">🥇</span>
+            {% elif loop.index == 2 %}<span class="nc-medal-2">🥈</span>
+            {% elif loop.index == 3 %}<span class="nc-medal-3">🥉</span>
+            {% else %}{{ loop.index }}{% endif %}
+          </div>
+          <div class="flex-grow-1">
+            <div class="fw-semibold">{{ entry.display_name }}</div>
+            <div class="text-muted small">{{ entry.submission_count }} submission{{ 's' if entry.submission_count != 1 else '' }}</div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <!-- Mini bar -->
+            <div style="width:80px;background:#e9ecef;border-radius:100px;height:6px">
+              <div style="width:{{ entry.avg_score }}%;background:{{ '#4CAF50' if entry.avg_score >= 70 else '#FFC107' if entry.avg_score >= 50 else '#f44336' }};border-radius:100px;height:6px"></div>
+            </div>
+            <div class="nc-lb-score" style="color:{{ '#4CAF50' if entry.avg_score >= 70 else '#FFC107' if entry.avg_score >= 50 else '#f44336' }}">{{ entry.avg_score }}</div>
+            <span class="nc-lb-grade" style="background:{{ {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336'}.get(entry.grade,'#aaa') }}20;color:{{ {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336'}.get(entry.grade,'#aaa') }};border:1px solid {{ {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336'}.get(entry.grade,'#aaa') }}">{{ entry.grade }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <div style="font-size:3rem">📭</div>
+      <p class="mt-2">No graded assignments yet.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Projects Leaderboard -->
+  <div id="lb-projects" style="display:none">
+    {% if project_leaderboard %}
+    <div class="card nc-lb-card shadow-sm">
+      <div class="card-header fw-semibold bg-light d-flex justify-content-between">
+        <span>🔬 Project Rankings</span>
+        <span class="badge bg-secondary">{{ project_leaderboard|length }} students</span>
+      </div>
+      <div class="card-body p-0">
+        {% for entry in project_leaderboard %}
+        <div class="nc-lb-row {{ 'you' if entry.is_you else '' }}">
+          <div class="nc-rank-num">
+            {% if loop.index == 1 %}<span class="nc-medal-1">🥇</span>
+            {% elif loop.index == 2 %}<span class="nc-medal-2">🥈</span>
+            {% elif loop.index == 3 %}<span class="nc-medal-3">🥉</span>
+            {% else %}{{ loop.index }}{% endif %}
+          </div>
+          <div class="flex-grow-1">
+            <div class="fw-semibold">{{ entry.display_name }}</div>
+            <div class="text-muted small">
+              {% if entry.rejected %}<span class="badge bg-danger" style="font-size:.7rem">Rejected</span>{% endif %}
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <div style="width:80px;background:#e9ecef;border-radius:100px;height:6px">
+              <div style="width:{{ entry.score }}%;background:{{ '#4CAF50' if entry.score >= 70 else '#FFC107' if entry.score >= 50 else '#f44336' }};border-radius:100px;height:6px"></div>
+            </div>
+            <div class="nc-lb-score" style="color:{{ '#4CAF50' if entry.score >= 70 else '#FFC107' if entry.score >= 50 else '#f44336' }}">{{ entry.score }}</div>
+            <span class="nc-lb-grade" style="background:{{ {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336'}.get(entry.grade,'#aaa') }}20;color:{{ {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336'}.get(entry.grade,'#aaa') }};border:1px solid {{ {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336'}.get(entry.grade,'#aaa') }}">{{ entry.grade }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <div style="font-size:3rem">📭</div>
+      <p class="mt-2">No graded projects yet.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function showLB(type, btn) {
+  document.querySelectorAll('.nc-tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('lb-assignments').style.display = type === 'assignments' ? 'block' : 'none';
+  document.getElementById('lb-projects').style.display = type === 'projects' ? 'block' : 'none';
+}
+</script>
+{% endblock %}

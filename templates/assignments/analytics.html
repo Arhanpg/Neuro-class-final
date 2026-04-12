@@ -1,79 +1,100 @@
 {% extends 'base.html' %}
 {% block title %}Analytics — {{ classroom.name }}{% endblock %}
 {% block content %}
-<div class="container py-4">
-  <div class="d-flex align-items-center gap-3 mb-4">
+<style>
+.nc-stat-card { border-radius: 12px; border: 1px solid #e0e0e0; text-align: center; padding: 1.5rem 1rem; }
+.nc-stat-big { font-size: 2.5rem; font-weight: 900; line-height: 1.1; }
+.nc-grade-pill { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%; font-size: 1.2rem; font-weight: 800; }
+.nc-dist-bar { height: 32px; border-radius: 6px; transition: width .6s; display: flex; align-items: center; justify-content: flex-end; padding-right: .5rem; color: #fff; font-weight: 700; font-size: .85rem; min-width: 2rem; }
+.nc-assign-row { display: flex; align-items: center; gap: 1rem; padding: .75rem 0; border-bottom: 1px solid #f0f0f0; }
+.nc-assign-row:last-child { border-bottom: none; }
+.nc-completion-bar { flex: 1; background: #e9ecef; border-radius: 100px; height: 8px; overflow: hidden; }
+.nc-completion-fill { height: 100%; border-radius: 100px; transition: width .6s; }
+</style>
+
+<div class="container py-4" style="max-width:1000px">
+  <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
     <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary btn-sm">← Back</a>
-    <h2 class="mb-0">📊 Analytics</h2>
+    <h2 class="mb-0 fw-bold">📈 Analytics</h2>
     <span class="badge bg-primary">{{ classroom.name }}</span>
+    <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=classroom.id) }}" class="btn btn-sm btn-outline-warning ms-auto">🏆 Leaderboard</a>
   </div>
 
-  <!-- KPI row -->
+  <!-- KPI Cards -->
   <div class="row g-3 mb-4">
-    <div class="col-md-3">
-      <div class="card shadow-sm text-center py-3">
-        <div style="font-size:2rem;font-weight:800" class="text-primary">{{ stats.total_submissions }}</div>
-        <small class="text-muted">Total Submissions</small>
+    <div class="col-md-3 col-6">
+      <div class="nc-stat-card shadow-sm">
+        <div class="nc-stat-big text-primary">{{ stats.total_submissions }}</div>
+        <div class="text-muted small mt-1">Total Submissions</div>
       </div>
     </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm text-center py-3">
-        <div style="font-size:2rem;font-weight:800" class="text-success">{{ stats.avg_score|round(1) }}</div>
-        <small class="text-muted">Avg Score</small>
+    <div class="col-md-3 col-6">
+      <div class="nc-stat-card shadow-sm">
+        <div class="nc-stat-big text-success">{{ stats.graded }}</div>
+        <div class="text-muted small mt-1">Graded</div>
       </div>
     </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm text-center py-3">
-        <div style="font-size:2rem;font-weight:800" class="text-info">{{ stats.graded }}</div>
-        <small class="text-muted">Graded</small>
+    <div class="col-md-3 col-6">
+      <div class="nc-stat-card shadow-sm">
+        <div class="nc-stat-big text-warning">{{ stats.pending }}</div>
+        <div class="text-muted small mt-1">Pending</div>
       </div>
     </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm text-center py-3">
-        <div style="font-size:2rem;font-weight:800" class="text-warning">{{ stats.pending }}</div>
-        <small class="text-muted">Pending</small>
+    <div class="col-md-3 col-6">
+      <div class="nc-stat-card shadow-sm">
+        <div class="nc-stat-big">{{ stats.avg_score|round(1) }}</div>
+        <div class="text-muted small mt-1">Avg Score</div>
       </div>
     </div>
   </div>
 
-  <!-- Grade distribution -->
-  <div class="card mb-4 shadow-sm">
-    <div class="card-header fw-semibold">Grade Distribution</div>
-    <div class="card-body">
-      {% for grade, count in stats.grade_dist.items() %}
-      <div class="d-flex align-items-center mb-2">
-        <span class="me-3 fw-bold" style="width:20px">{{ grade }}</span>
-        <div class="progress flex-grow-1 me-3" style="height:24px">
-          <div class="progress-bar {{ {'A':'bg-success','B':'bg-info','C':'bg-warning','D':'bg-orange','F':'bg-danger'}.get(grade,'bg-secondary') }}"
-            style="width:{{ (count / stats.total_submissions * 100)|round if stats.total_submissions else 0 }}%"></div>
-        </div>
-        <span>{{ count }}</span>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-
-  <!-- Per-assignment table -->
-  <div class="card shadow-sm">
-    <div class="card-header fw-semibold">Per Assignment</div>
-    <div class="card-body p-0">
-      <table class="table table-hover mb-0">
-        <thead class="table-light"><tr><th>Assignment</th><th>Submissions</th><th>Avg Score</th><th>Completion</th></tr></thead>
-        <tbody>
-        {% for a in per_assignment %}
-        <tr>
-          <td>{{ a.title }}</td>
-          <td>{{ a.sub_count }}</td>
-          <td>{{ a.avg_score|round(1) if a.avg_score else '—' }}</td>
-          <td>
-            <div class="progress" style="height:18px">
-              <div class="progress-bar bg-primary" style="width:{{ a.completion_pct }}%">{{ a.completion_pct|round }}%</div>
+  <div class="row g-4">
+    <!-- Grade Distribution -->
+    <div class="col-md-5">
+      <div class="card shadow-sm" style="border-radius:12px">
+        <div class="card-header fw-semibold bg-light">🎓 Grade Distribution</div>
+        <div class="card-body">
+          {% set grade_colors = {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336'} %}
+          {% set max_count = [stats.grade_dist.values()|max, 1]|max %}
+          {% for g, count in stats.grade_dist.items() %}
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="nc-grade-pill" style="background:{{ grade_colors.get(g,'#aaa') }}20;color:{{ grade_colors.get(g,'#aaa') }};border:2px solid {{ grade_colors.get(g,'#aaa') }}">{{ g }}</span>
+            <div style="flex:1;background:#e9ecef;border-radius:6px;height:28px;overflow:hidden">
+              <div class="nc-dist-bar" style="width:{{ (count / max_count * 100)|round }}%;background:{{ grade_colors.get(g,'#aaa') }}">{{ count if count > 0 else '' }}</div>
             </div>
-          </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+            <span class="text-muted small" style="min-width:30px">{{ count }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Per-Assignment Stats -->
+    <div class="col-md-7">
+      <div class="card shadow-sm" style="border-radius:12px">
+        <div class="card-header fw-semibold bg-light">📋 Per-Assignment Completion</div>
+        <div class="card-body">
+          {% if per_assignment %}
+          {% for a in per_assignment %}
+          <div class="nc-assign-row">
+            <div style="width:160px;flex-shrink:0">
+              <div class="fw-semibold" style="font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.title }}</div>
+              <div class="text-muted" style="font-size:.78rem">{{ a.sub_count }} submissions</div>
+            </div>
+            <div class="nc-completion-bar">
+              <div class="nc-completion-fill" style="width:{{ a.completion_pct }}%;background:{{ '#4CAF50' if a.completion_pct >= 70 else '#FFC107' if a.completion_pct >= 40 else '#dc3545' }}"></div>
+            </div>
+            <div style="text-align:right;min-width:80px">
+              <div class="fw-bold" style="font-size:.9rem">{{ a.completion_pct }}%</div>
+              <div class="text-muted" style="font-size:.75rem">avg: {{ (a.avg_score or 0)|round(1) }}</div>
+            </div>
+          </div>
+          {% endfor %}
+          {% else %}
+          <div class="text-center py-4 text-muted">No assignments yet.</div>
+          {% endif %}
+        </div>
+      </div>
     </div>
   </div>
 </div>
