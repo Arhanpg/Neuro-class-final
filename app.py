@@ -36,6 +36,10 @@ app.config['MYSQL_CUSTOM_OPTIONS'] = {
 
 mysql = MySQL(app)
 
+# ── Register Blueprints ────────────────────────────────────────────────────
+from routes_assignments import assignments_bp
+app.register_blueprint(assignments_bp)
+
 for d in [Config.UPLOAD_FOLDER, Config.LECTURES_BASE_DIR, Config.RAG_INDEX_DIR]:
     os.makedirs(d, exist_ok=True)
 
