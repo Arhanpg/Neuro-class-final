@@ -1576,10 +1576,19 @@ def student_project_analyze():
     else:
         project_details = ''
 
+    student_id_str = str(session['user_id'])
+    cid = int(classroom_id) if classroom_id else 0
+
     def _analyze():
         try:
             from ai_engine import analyze_project_advisory
-            return analyze_project_advisory(repo_url=repo_url, project_details=project_details)
+            return analyze_project_advisory(
+                repo_url=repo_url,
+                project_rubric=project_details or 'General project rubric',
+                student_id=student_id_str,
+                classroom_id=cid,
+                project_details=project_details,
+            )
         except Exception as e:
             return {'error': str(e)}
 
