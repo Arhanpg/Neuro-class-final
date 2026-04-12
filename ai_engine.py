@@ -8,24 +8,17 @@ Direct port of the logic from NeuroClass_v4_Final.ipynb:
   - Project grading     : clone/pull repo → relevance check → rubric eval
   - Project advisory    : clone/pull repo → advisory report (NOT locked)
 
-── ROOT CAUSE OF "Lecture 9 not found" BUG ──────────────────────────────────
-  Many lecture slide PDFs are generated from PowerPoint / Google Slides and
-  contain text rendered as VECTOR GRAPHICS or embedded as images, not as
-  actual PDF text objects.  PyPDFLoader (which wraps pypdf) only extracts
-  real text objects — it returns empty strings for slide-style PDFs.
+FIXES APPLIED:
+  1. Import fix: 'from langchain.schema import Document' triggers broken
+     langchain_core.memory import on newer langchain versions.
+     Fixed by importing Document directly from langchain_core.documents.
 
-  Fix: 3-layer PDF extraction waterfall:
-    Layer 1 – PyPDFLoader  (fast, works for text-heavy PDFs)
-    Layer 2 – pdfplumber   (much better at slide/table PDFs; reads PDF draws)
-    Layer 3 – pypdf direct (last resort; sometimes catches what pdfplumber misses)
+  2. PDF extraction: 3-layer waterfall (PyPDFLoader → pdfplumber → pypdf)
+     so slide-style PDFs (IIT lecture slides) are properly read.
 
-  Additionally:
-    • On every retrain, the OLD FAISS index folder is deleted first so stale
-      embeddings from a previous (broken) indexing run are never reused.
-    • Each document chunk is tagged with its source filename so the LLM knows
-      which lecture it is drawing from.
-    • MMR retrieval (k=8, fetch_k=20) replaces plain similarity search to
-      prevent near-duplicate chunks from a single lecture drowning out others.
+  3. Stale index: old FAISS folder is deleted before every retrain.
+
+  4. faiss-cpu version pinned to >=1.9.0 in requirements.txt
 """
 
 import os
@@ -241,7 +234,6 @@ def _extract_pdf_text(pdf_path: str) -> str:
                         pages_text.append(t)
             text2 = '\n'.join(pages_text).strip()
             if text2:
-                # Merge: if Layer 1 got something, append; otherwise replace
                 combined = (combined + '\n' + text2).strip() if combined else text2
                 print(f'[PDF-L2] {path.name}: +{len(text2)} chars via pdfplumber')
         except ImportError:
@@ -298,7 +290,11 @@ _training_status: dict = {}
 def _get_embedding_fn():
     global _embedding_fn
     if _embedding_fn is None:
-        from langchain_community.embeddings import HuggingFaceEmbeddings
+        try:
+            # Prefer the newer non-deprecated package
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import HuggingFaceEmbeddings
         _embedding_fn = HuggingFaceEmbeddings(
             model_name='all-MiniLM-L6-v2',
             model_kwargs={'device': 'cpu'},
@@ -320,6 +316,15 @@ def get_training_status(classroom_id: int) -> str:
     if _index_path(classroom_id).exists():
         return 'done'
     return _training_status.get(classroom_id, 'idle')
+
+
+def _nuke_stale_index(classroom_id: int):
+    """Delete old on-disk FAISS index + evict in-memory store."""
+    _vector_stores.pop(classroom_id, None)
+    idx_path = _index_path(classroom_id)
+    if idx_path.exists():
+        shutil.rmtree(str(idx_path), ignore_errors=True)
+        print(f'[RAG] Deleted stale index at {idx_path}')
 
 
 def build_rag_index(classroom_id: int) -> dict:
@@ -344,25 +349,22 @@ def build_rag_index(classroom_id: int) -> dict:
     if not all_files:
         return {'ok': False, 'error': 'No lecture files found. Upload PDFs first.'}
 
+    # ── Nuke old index NOW (before thread) so it never loads again ─────
+    _nuke_stale_index(classroom_id)
     _training_status[classroom_id] = 'running'
-
-    # Evict any in-memory store so rag_query reloads the freshly built one
-    _vector_stores.pop(classroom_id, None)
 
     def _build():
         try:
+            # ── FIX #1: import Document from langchain_core directly ────
+            # 'from langchain.schema import Document' triggers a broken
+            # import of langchain_core.memory on newer langchain installs.
+            # langchain_core.documents is always safe.
+            from langchain_core.documents import Document
             from langchain.text_splitter import RecursiveCharacterTextSplitter
             from langchain_community.vectorstores import FAISS
-            from langchain.schema import Document
 
             emb = _get_embedding_fn()
-            docs: list[Document] = []
-
-            # ── Delete old index so we always start clean ──────────────
-            idx_path = _index_path(classroom_id)
-            if idx_path.exists():
-                shutil.rmtree(str(idx_path), ignore_errors=True)
-                print(f'[RAG] Deleted stale index at {idx_path}')
+            docs: list = []
 
             # ── Extract PDFs via 3-layer waterfall ─────────────────────
             for pdf_file in lecture_dir.glob('*.pdf'):
@@ -424,6 +426,7 @@ def build_rag_index(classroom_id: int) -> dict:
             store = FAISS.from_documents(chunks, emb)
             _vector_stores[classroom_id] = store
 
+            idx_path = _index_path(classroom_id)
             idx_path.mkdir(parents=True, exist_ok=True)
             store.save_local(str(idx_path))
 
@@ -612,7 +615,6 @@ def _build_assignment_graph():
     def node_extract(state: EvalState) -> EvalState:
         p = Path(state['submission_path'])
         if p.exists():
-            # Use the same 3-layer waterfall for submission PDFs too
             text = _extract_pdf_text(str(p))
             state['extracted_text'] = text if text else 'ERROR: No text extracted'
             print(f'[Grader] Extracted {len(text)} chars')
