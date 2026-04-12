@@ -4,12 +4,27 @@ ai_engine.py  —  NeuroClass AI backend
 Direct port of the logic from NeuroClass_v4_Final.ipynb:
   - FallbackLLM  : Gemini-2.0-Flash → OpenRouter/Llama-3.3-70B → Groq/Llama-3.3-70B → Groq/Llama-3.1-8B
   - RAG          : FAISS + all-MiniLM-L6-v2  (build_rag_index / rag_query)
+                   FIX: MMR retrieval + k=15 + smaller chunks (500/100) to handle
+                        multi-PDF classrooms without answer dilution.
   - Assignment grading  : LangGraph pipeline (extract → relevance_check → evaluate → lock)
   - Project grading     : clone/pull repo → relevance check → rubric eval
   - Project advisory    : clone/pull repo → advisory report (NOT locked)
 
-This module is imported lazily by app.py so the heavy imports
-(sentence-transformers, FAISS, LangGraph …) only load once.
+── WHY THE OLD CODE BROKE WITH MULTIPLE PDFs ───────────────────────────────
+  With 1 PDF  → FAISS had ~35 chunks.  k=5 pulled 5 chunks, ALL from that PDF → great answers.
+  With 5 PDFs → FAISS has ~170 chunks. k=5 still pulled 5 chunks, but they were scattered
+                across PDFs by cosine similarity, so Lecture-9 content was drowned out by
+                Lecture-1 syllabus text (which mentions every lecture by name).
+
+  Three fixes applied:
+    1. chunk_size 800→500, overlap 120→100  — more, smaller chunks = finer retrieval granularity
+    2. k=5 → k=15  — retrieve more candidates before re-ranking
+    3. MMR (Maximal Marginal Relevance) search instead of plain similarity search
+       — MMR re-ranks the k=15 candidates to maximise both relevance AND diversity,
+         so you get chunks from different parts of the correct lecture instead of
+         5 near-duplicate syllabus sentences.
+    4. Prompt rewritten: instead of "use ONLY the material" (which caused the bot to
+       say "I don't have info") → now "use the material first, then general knowledge".
 """
 
 import os
@@ -180,7 +195,20 @@ def get_llm() -> FallbackLLM:
 
 # ═══════════════════════════════════════════════════════════
 #  RAG — FAISS + sentence-transformers
+#
+#  KEY PARAMETERS (tuned for multi-PDF classrooms):
+#    CHUNK_SIZE    = 500   (was 800) — smaller chunks = more precise retrieval
+#    CHUNK_OVERLAP = 100   (was 120) — slight reduction to match smaller chunks
+#    RAG_K         = 15    (was 5)   — fetch 15 candidates, then MMR re-ranks to 8
+#    MMR fetch_k   = 15              — pool size fed into MMR
+#    MMR k         = 8               — final diverse chunks sent to LLM
 # ═══════════════════════════════════════════════════════════
+
+CHUNK_SIZE    = 500
+CHUNK_OVERLAP = 100
+RAG_K         = 8    # final number of chunks passed to LLM after MMR
+MMR_FETCH_K   = 20   # candidate pool size for MMR (must be >= RAG_K)
+MMR_LAMBDA    = 0.6  # 0=max diversity, 1=max relevance  (0.6 = good balance)
 
 _vector_stores: dict = {}   # classroom_id (int) → FAISS store
 _embedding_fn  = None
@@ -221,16 +249,20 @@ def get_training_status(classroom_id: int) -> str:
 def build_rag_index(classroom_id: int) -> dict:
     """
     Build the FAISS index for a classroom from its uploaded lecture files.
+    Uses smaller chunks (500/100) for better per-lecture retrieval accuracy.
     Runs in a background thread so the HTTP response returns immediately.
+
+    IMPORTANT: After adding new PDFs, call this again — it rebuilds the entire
+    index so all lectures are re-embedded together in one unified vector store.
     """
     lecture_dir = Path(LECTURES_BASE_DIR) / str(classroom_id)
     if not lecture_dir.exists():
         return {'ok': False, 'error': 'No lecture files found. Upload PDFs first.'}
 
-    pdf_files = list(lecture_dir.glob('*.pdf')) + \
-                list(lecture_dir.glob('*.txt')) + \
-                list(lecture_dir.glob('*.doc')) + \
-                list(lecture_dir.glob('*.docx'))
+    pdf_files = (list(lecture_dir.glob('*.pdf')) +
+                 list(lecture_dir.glob('*.txt')) +
+                 list(lecture_dir.glob('*.doc')) +
+                 list(lecture_dir.glob('*.docx')))
 
     if not pdf_files:
         return {'ok': False, 'error': 'No lecture files found. Upload PDFs first.'}
@@ -242,18 +274,27 @@ def build_rag_index(classroom_id: int) -> dict:
             from langchain_community.document_loaders import PyPDFDirectoryLoader
             from langchain.text_splitter import RecursiveCharacterTextSplitter
             from langchain_community.vectorstores import FAISS
+            from langchain.schema import Document
 
             emb = _get_embedding_fn()
 
+            # ── Load PDFs ──
             loader = PyPDFDirectoryLoader(str(lecture_dir), glob='**/*.pdf', silent_errors=True)
             docs   = loader.load()
 
-            # Also load .txt files
+            # ── Tag each doc with its source filename for debugging ──
+            for doc in docs:
+                src = doc.metadata.get('source', '')
+                doc.metadata['filename'] = Path(src).name if src else 'unknown'
+
+            # ── Load .txt files ──
             for txt_file in lecture_dir.glob('*.txt'):
                 try:
                     text = txt_file.read_text(encoding='utf-8', errors='replace')
-                    from langchain.schema import Document
-                    docs.append(Document(page_content=text, metadata={'source': str(txt_file)}))
+                    docs.append(Document(
+                        page_content=text,
+                        metadata={'source': str(txt_file), 'filename': txt_file.name}
+                    ))
                 except Exception:
                     pass
 
@@ -262,8 +303,11 @@ def build_rag_index(classroom_id: int) -> dict:
                 print(f'[RAG] No text extracted from files in {lecture_dir}')
                 return
 
+            # ── Chunk with SMALLER size for finer retrieval granularity ──
             chunks = RecursiveCharacterTextSplitter(
-                chunk_size=800, chunk_overlap=120
+                chunk_size=CHUNK_SIZE,
+                chunk_overlap=CHUNK_OVERLAP,
+                separators=['\n\n', '\n', '. ', ' ', ''],
             ).split_documents(docs)
 
             store = FAISS.from_documents(chunks, emb)
@@ -274,15 +318,17 @@ def build_rag_index(classroom_id: int) -> dict:
             store.save_local(str(idx_path))
 
             _training_status[classroom_id] = 'done'
-            print(f'[RAG] Index built for classroom {classroom_id}: '
-                  f'{len(docs)} pages, {len(chunks)} chunks → {idx_path}')
+            print(
+                f'[RAG] Index built for classroom {classroom_id}: '
+                f'{len(docs)} pages, {len(chunks)} chunks → {idx_path}'
+            )
         except Exception as e:
             _training_status[classroom_id] = 'error'
             print(f'[RAG] Build failed for classroom {classroom_id}: {e}')
 
     t = threading.Thread(target=_build, daemon=True)
     t.start()
-    return {'ok': True, 'message': 'Training started in background. Refresh in ~30 seconds.'}
+    return {'ok': True, 'message': f'Training started for {len(pdf_files)} file(s). Refresh in ~30 seconds.'}
 
 
 def _load_rag_index(classroom_id: int) -> bool:
@@ -310,13 +356,20 @@ _conversation_memory: dict = {}
 def rag_query(
     classroom_id: int,
     question: str,
-    k: int = 5,
+    k: int = RAG_K,
     context_data: Optional[dict] = None,
     session_key: Optional[str] = None,
 ) -> str:
     """
-    Answer a student's question using the classroom's FAISS index + conversation memory.
-    Falls back to a general-knowledge answer when no index is available.
+    Answer a student's question using MMR retrieval over the classroom's FAISS
+    index, then the active LLM.  Conversation memory is maintained per session.
+
+    Retrieval strategy (multi-PDF safe):
+      1. FAISS MMR search with fetch_k=MMR_FETCH_K candidates
+      2. MMR re-ranks to k=RAG_K diverse chunks (lambda=MMR_LAMBDA)
+      3. All chunks concatenated → injected into LLM prompt
+      4. LLM instructed to USE the material as primary source, then supplement
+         with general knowledge — this avoids the "I don't have info" dead-end.
     """
     from langchain_core.messages import HumanMessage, AIMessage
     llm = get_llm()
@@ -329,45 +382,111 @@ def rag_query(
             lines.append(f"  - {a['title']} | Due: {a['due_date']} | Max marks: {a['max_marks']}")
         assign_ctx = '\n'.join(lines)
 
-    class_name    = (context_data or {}).get('class_name', '')
-    subject       = (context_data or {}).get('subject', '')
-    student_name  = (context_data or {}).get('student_name', '')
+    class_name   = (context_data or {}).get('class_name', '')
+    subject      = (context_data or {}).get('subject', '')
+    student_name = (context_data or {}).get('student_name', '')
 
-    # ── Retrieve from vector store if indexed ──
+    # ── Load index if not in memory ──
     if classroom_id not in _vector_stores:
         _load_rag_index(classroom_id)
 
+    # ── MMR retrieval ──────────────────────────────────────────────────────
+    #  MMR (Maximal Marginal Relevance) solves the "all chunks are the same"
+    #  problem by penalising redundant results.  It fetches MMR_FETCH_K
+    #  candidates by cosine similarity, then greedily picks k documents that
+    #  are both relevant AND diverse from each other.
+    # ──────────────────────────────────────────────────────────────────────
     context_chunks = ''
+    source_files   = []
+
     if classroom_id in _vector_stores:
         try:
-            retriever = _vector_stores[classroom_id].as_retriever(search_kwargs={'k': k})
-            docs      = retriever.invoke(question)
-            context_chunks = '\n\n'.join(d.page_content for d in docs)
+            store = _vector_stores[classroom_id]
+            total_chunks = store.index.ntotal  # total vectors in FAISS index
+
+            # Clamp fetch_k to what's actually in the index
+            actual_fetch_k = min(MMR_FETCH_K, total_chunks)
+            actual_k       = min(k, actual_fetch_k)
+
+            docs = store.max_marginal_relevance_search(
+                question,
+                k=actual_k,
+                fetch_k=actual_fetch_k,
+                lambda_mult=MMR_LAMBDA,
+            )
+
+            context_chunks = '\n\n---\n\n'.join(d.page_content for d in docs)
+
+            # Collect unique source filenames for transparency
+            source_files = list(dict.fromkeys(
+                d.metadata.get('filename', d.metadata.get('source', ''))
+                for d in docs
+            ))
+
+            print(
+                f'[RAG] MMR query for classroom={classroom_id}: '
+                f'fetched {actual_fetch_k} → kept {actual_k} chunks '
+                f'from {source_files}'
+            )
         except Exception as e:
-            print(f'[RAG] Retrieval error: {e}')
+            print(f'[RAG] MMR retrieval error: {e}')
+            # Fallback to plain similarity search if MMR fails
+            try:
+                retriever  = _vector_stores[classroom_id].as_retriever(
+                    search_kwargs={'k': min(k, total_chunks)}
+                )
+                docs           = retriever.invoke(question)
+                context_chunks = '\n\n---\n\n'.join(d.page_content for d in docs)
+                print('[RAG] Fell back to plain similarity search')
+            except Exception as e2:
+                print(f'[RAG] Fallback retrieval also failed: {e2}')
 
     # ── Conversation memory ──
     history_msgs = []
     if session_key:
         history_msgs = _conversation_memory.get(session_key, [])[-10:]  # last 5 turns
 
-    # ── Build prompt ──
+    # ── Build prompt ──────────────────────────────────────────────────────
+    #  FIX: old prompt said "use ONLY the material" which caused the LLM to
+    #  refuse answering when the retrieved chunks happened to be from a
+    #  different lecture.  New prompt:
+    #    - Prioritise the retrieved course material
+    #    - If the answer is partially or fully absent, fill in with general
+    #      knowledge and clearly label it
+    #    - Never say "I don't have information" when you can still help
+    # ──────────────────────────────────────────────────────────────────────
     if context_chunks:
+        sources_str = ', '.join(source_files) if source_files else 'course materials'
         system_prompt = (
-            f"You are a helpful AI assistant for the {class_name} ({subject}) classroom on NeuroClass.\n"
+            f"You are a knowledgeable and helpful AI teaching assistant for the "
+            f"'{class_name}' ({subject}) classroom on NeuroClass.\n"
             f"Student's name: {student_name}\n\n"
             f"{assign_ctx}\n\n"
-            "Answer using ONLY the course material below. If the answer isn't in the material, "
-            "say so honestly and then use your general knowledge to help.\n\n"
-            f"COURSE MATERIAL:\n{context_chunks}"
+            "INSTRUCTIONS:\n"
+            "1. The COURSE MATERIAL below contains excerpts retrieved from the uploaded "
+            f"lecture notes ({sources_str}).\n"
+            "2. Use this material as your PRIMARY source of truth. Quote or paraphrase it "
+            "when answering.\n"
+            "3. If the material covers the topic partially, complete your answer using your "
+            "general knowledge and clearly say: '[General knowledge]:' before that part.\n"
+            "4. If the material does NOT cover the topic at all, answer from general knowledge "
+            "and say: '[Note: Answer based on general knowledge — not in the lecture notes]'\n"
+            "5. NEVER say 'I don't have information about this'. Always try to help.\n"
+            "6. Be concise, clear, and student-friendly.\n\n"
+            f"COURSE MATERIAL (from {sources_str}):\n"
+            "─────────────────────────────────────\n"
+            f"{context_chunks}\n"
+            "─────────────────────────────────────"
         )
     else:
         system_prompt = (
-            f"You are a helpful AI assistant for the {class_name} ({subject}) classroom on NeuroClass.\n"
+            f"You are a helpful AI teaching assistant for the '{class_name}' ({subject}) "
+            f"classroom on NeuroClass.\n"
             f"Student's name: {student_name}\n\n"
             f"{assign_ctx}\n\n"
-            "No lecture notes have been indexed yet for this classroom. "
-            "Answer based on your general knowledge and be as helpful as possible."
+            "No lecture notes have been indexed for this classroom yet. "
+            "Answer based on your general knowledge and be as helpful as possible. "
+            "Mention that the teacher should upload lecture PDFs for more accurate answers."
         )
 
     messages = (
@@ -590,9 +709,9 @@ def _check_repo_relevance(summary: str, project_details: str, project_rubric: st
     response = llm.invoke([HumanMessage(content=prompt)]).content
     lines = {l.split(':')[0].strip().upper(): l.split(':', 1)[1].strip()
              for l in response.splitlines() if ':' in l}
-    has_code   = 'YES' in lines.get('Q1_HAS_CODE',   '').upper()
+    has_code    = 'YES' in lines.get('Q1_HAS_CODE',   '').upper()
     is_relevant = 'YES' in lines.get('Q2_IS_RELEVANT', '').upper()
-    reason     = lines.get('REASON', response[:200])
+    reason      = lines.get('REASON', response[:200])
     return {'relevant': has_code and is_relevant, 'has_code': has_code, 'is_relevant': is_relevant, 'reason': reason}
 
 
