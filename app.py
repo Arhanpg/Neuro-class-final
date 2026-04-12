@@ -1623,7 +1623,7 @@ def student_leaderboard():
         else:
             r['display_name'] = f'Student {counter:03d}'
             r['is_me']        = False
-            counter           += 1
+        counter += 1
     return render_template('student/student_leaderboard.html', rows=rows, my_id=my_id)
 
 

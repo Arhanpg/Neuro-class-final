@@ -23,7 +23,8 @@
   <form method="post" style="display:flex;flex-direction:column;gap:var(--space-5)">
     <div class="form-group">
       <label class="form-label">Classroom</label>
-      <select name="classroom_id" class="form-select" disabled>
+      <input type="hidden" name="classroom_id" value="{{ assignment.classroom_id }}">
+      <select class="form-select" disabled>
         {% for c in classrooms %}
         <option value="{{ c.id }}" {% if c.id == assignment.classroom_id %}selected{% endif %}>{{ c.name }}</option>
         {% endfor %}
