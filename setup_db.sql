@@ -5,6 +5,11 @@
 CREATE DATABASE IF NOT EXISTS neuroclass CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE neuroclass;
 
+-- Force the connection to use utf8mb4 so emoji / 4-byte characters are accepted
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
+SET character_set_connection = utf8mb4;
+
 -- Users
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -13,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(64) NOT NULL,
     role ENUM('student', 'instructor') NOT NULL DEFAULT 'student',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Classrooms
 CREATE TABLE IF NOT EXISTS classrooms (
@@ -26,7 +31,7 @@ CREATE TABLE IF NOT EXISTS classrooms (
     rag_indexed TINYINT(1) DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (instructor_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Add rag_indexed if upgrading from old schema
 SET @dbname = DATABASE();
@@ -53,7 +58,7 @@ CREATE TABLE IF NOT EXISTS classroom_members (
     UNIQUE KEY uq_member (classroom_id, user_id),
     FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Lecture materials (PDFs uploaded by instructor)
 CREATE TABLE IF NOT EXISTS lecture_materials (
@@ -64,19 +69,23 @@ CREATE TABLE IF NOT EXISTS lecture_materials (
     file_path VARCHAR(512) NOT NULL,
     uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Chat history (RAG chatbot per classroom)
+-- Chat history — MUST be utf8mb4 to store emoji in AI responses
 CREATE TABLE IF NOT EXISTS chat_history (
     id INT AUTO_INCREMENT PRIMARY KEY,
     classroom_id INT NOT NULL,
     user_id INT NOT NULL,
     role ENUM('user', 'assistant') NOT NULL,
-    message TEXT NOT NULL,
+    message MEDIUMTEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Fix existing chat_history column charset if table already existed with wrong charset
+ALTER TABLE chat_history
+    CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Assignments posted by instructor
 CREATE TABLE IF NOT EXISTS assignments (
@@ -88,7 +97,7 @@ CREATE TABLE IF NOT EXISTS assignments (
     max_marks INT DEFAULT 100,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Assignment submissions by students
 CREATE TABLE IF NOT EXISTS assignment_submissions (
@@ -97,15 +106,15 @@ CREATE TABLE IF NOT EXISTS assignment_submissions (
     student_id INT NOT NULL,
     filename VARCHAR(255),
     file_path VARCHAR(512),
-    submitted_text TEXT,
+    submitted_text MEDIUMTEXT,
     ai_grade INT,
-    ai_feedback TEXT,
+    ai_feedback MEDIUMTEXT,
     teacher_grade INT,
     submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_submission (assignment_id, student_id),
     FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE,
     FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Projects posted by instructor
 CREATE TABLE IF NOT EXISTS projects (
@@ -117,7 +126,7 @@ CREATE TABLE IF NOT EXISTS projects (
     max_marks INT DEFAULT 100,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Project submissions (GitHub repo links) by students
 CREATE TABLE IF NOT EXISTS project_submissions (
@@ -126,12 +135,12 @@ CREATE TABLE IF NOT EXISTS project_submissions (
     student_id INT NOT NULL,
     github_url VARCHAR(512) NOT NULL,
     ai_grade INT,
-    ai_feedback TEXT,
+    ai_feedback MEDIUMTEXT,
     teacher_grade INT,
     submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_proj_submission (project_id, student_id),
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 SELECT 'Database setup complete!' AS status;

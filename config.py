@@ -9,6 +9,7 @@ class Config:
     MYSQL_USER      = os.getenv('MYSQL_USER', 'root')
     MYSQL_PASSWORD  = os.getenv('MYSQL_PASSWORD', '')
     MYSQL_DB        = os.getenv('MYSQL_DB', 'neuroclass')
+    MYSQL_CHARSET   = 'utf8mb4'          # <-- fixes emoji / 4-byte unicode error 1366
     UPLOAD_FOLDER   = os.getenv('UPLOAD_FOLDER', 'uploads')
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50 MB
 
