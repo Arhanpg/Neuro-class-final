@@ -1,23 +1,18 @@
-// ── Dark/light mode toggle ───────────────────────────────────────────────
-(function () {
-  const root   = document.documentElement;
-  const toggle = document.querySelector('[data-theme-toggle]');
-  let theme    = localStorage.getItem('nc-theme') ||
-                 (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
+// NeuroClass — global JS helpers
 
-  root.setAttribute('data-theme', theme);
+// Auto-dismiss flash messages after 5 seconds
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.flash').forEach(el => {
+    setTimeout(() => el.remove(), 5000);
+  });
 
-  if (toggle) {
-    toggle.addEventListener('click', () => {
-      theme = theme === 'dark' ? 'light' : 'dark';
-      root.setAttribute('data-theme', theme);
-      try { localStorage.setItem('nc-theme', theme); } catch(e) {}
+  // Auto-uppercase classroom code input
+  const codeInput = document.getElementById('code');
+  if (codeInput) {
+    codeInput.addEventListener('input', e => {
+      const pos = e.target.selectionStart;
+      e.target.value = e.target.value.toUpperCase();
+      e.target.setSelectionRange(pos, pos);
     });
   }
-})();
-
-// ── Flash auto-dismiss ───────────────────────────────────────────────────
-document.querySelectorAll('.flash').forEach(el => {
-  setTimeout(() => el.style.opacity = '0', 4000);
-  setTimeout(() => el.remove(), 4500);
 });

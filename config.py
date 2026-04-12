@@ -4,20 +4,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    SECRET_KEY = os.getenv('SECRET_KEY', 'neuroclass-dev-secret-key')
-    MYSQL_HOST = os.getenv('MYSQL_HOST', 'localhost')
-    MYSQL_USER = os.getenv('MYSQL_USER', 'root')
-    MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', 'Poorva@07')
-    MYSQL_DB = os.getenv('MYSQL_DB', 'neuroclass')
-    UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'uploads')
-    MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
-    ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'txt', 'png', 'jpg', 'jpeg'}
+    SECRET_KEY      = os.getenv('SECRET_KEY', 'neuroclass-dev-secret-key')
+    MYSQL_HOST      = os.getenv('MYSQL_HOST', 'localhost')
+    MYSQL_USER      = os.getenv('MYSQL_USER', 'root')
+    MYSQL_PASSWORD  = os.getenv('MYSQL_PASSWORD', '')
+    MYSQL_DB        = os.getenv('MYSQL_DB', 'neuroclass')
+    UPLOAD_FOLDER   = os.getenv('UPLOAD_FOLDER', 'uploads')
+    MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50 MB
 
-    # AI / LLM
-    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-    OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
-    GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
+    # AI keys — loaded from .env
+    GEMINI_API_KEY      = os.getenv('GEMINI_API_KEY', '')
+    OPENROUTER_API_KEY  = os.getenv('OPENROUTER_API_KEY', '')
+    GROQ_API_KEY        = os.getenv('GROQ_API_KEY', '')
 
-    # RAG storage paths (local)
+    # Local storage paths
     LECTURES_BASE_DIR = os.path.join(UPLOAD_FOLDER, 'lectures')
-    RAG_INDEX_DIR = os.path.join(UPLOAD_FOLDER, 'rag_indexes')
+    RAG_INDEX_DIR     = os.path.join(UPLOAD_FOLDER, 'rag_indexes')

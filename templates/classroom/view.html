@@ -1,282 +1,275 @@
 {% extends 'base.html' %}
 {% block title %}{{ classroom.name }} — NeuroClass{% endblock %}
 
-{% block content %}
-<div class="classroom-page">
-
-  <!-- Header -->
-  <div class="classroom-header">
-    <div>
-      <div class="classroom-subject">{{ classroom.subject or 'General' }}</div>
-      <h1 class="classroom-title">{{ classroom.name }}</h1>
-      <div class="classroom-meta">Instructor: <strong>{{ classroom.instructor_name }}</strong></div>
-    </div>
-    {% if session.role == 'instructor' %}
-    <div class="classroom-header-actions">
-      <div class="code-badge" id="classCode" title="Click to copy">{{ classroom.code }}</div>
-      <a href="/classroom/{{ classroom.id }}/upload_lectures" class="btn btn-primary">📚 Upload Lectures</a>
-    </div>
-    {% endif %}
-  </div>
-
-  <!-- Tabs -->
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="chat">🤖 AI Chatbot</button>
-    <button class="tab-btn" data-tab="materials">📄 Materials</button>
-    <button class="tab-btn" data-tab="members">👥 Members</button>
-  </div>
-
-  <!-- TAB: AI CHATBOT -->
-  <div class="tab-panel active" id="tab-chat">
-    <div class="chatbot-container">
-
-      {% if session.role == 'instructor' %}
-      <div class="ai-status-bar">
-        {% if indexed %}
-          <span class="status-dot green"></span>
-          <span>AI is trained on your lecture notes. Chatbot is active for students.</span>
-        {% else %}
-          <span class="status-dot red"></span>
-          <span>AI is <strong>not trained</strong> yet. Upload PDFs and click "Train AI" below.</span>
-          <button class="btn btn-primary btn-sm" id="trainAiBtn" onclick="trainAI({{ classroom.id }})">⚡ Train AI Now</button>
-        {% endif %}
-      </div>
-      {% else %}
-      <div class="ai-status-bar">
-        {% if indexed %}
-          <span class="status-dot green"></span>
-          <span>AI is trained on your course materials. Ask anything!</span>
-        {% else %}
-          <span class="status-dot yellow"></span>
-          <span>AI is ready (general knowledge). Course-specific training coming soon.</span>
-        {% endif %}
-      </div>
-      {% endif %}
-
-      <!-- Chat messages -->
-      <div class="chat-messages" id="chatMessages">
-        {% if not chat_history %}
-        <div class="chat-empty">
-          <div class="chat-empty-icon">🤖</div>
-          <p>Hi! I'm <strong>NeuroBot</strong>, your AI classroom assistant.</p>
-          <p>Ask me anything about the course material, deadlines, or study tips!</p>
-        </div>
-        {% else %}
-          {% for msg in chat_history %}
-          <div class="chat-bubble {{ msg.role }}">
-            {% if msg.role == 'user' %}
-              <div class="bubble-meta">{{ msg.full_name }}</div>
-            {% else %}
-              <div class="bubble-meta">NeuroBot</div>
-            {% endif %}
-            <div class="bubble-text">{{ msg.message }}</div>
-            <div class="bubble-time">{{ msg.created_at.strftime('%H:%M') if msg.created_at else '' }}</div>
-          </div>
-          {% endfor %}
-        {% endif %}
-      </div>
-
-      <!-- Chat input -->
-      <div class="chat-input-bar">
-        <input
-          type="text"
-          id="chatInput"
-          class="chat-input"
-          placeholder="Ask a question about the course..."
-          autocomplete="off"
-        />
-        <button class="btn btn-primary" id="chatSendBtn" onclick="sendChat({{ classroom.id }})">
-          Send
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- TAB: MATERIALS -->
-  <div class="tab-panel" id="tab-materials">
-    {% if session.role == 'instructor' %}
-    <div class="section-actions">
-      <a href="/classroom/{{ classroom.id }}/upload_lectures" class="btn btn-primary">+ Upload Lecture PDFs</a>
-    </div>
-    {% endif %}
-    {% if materials %}
-    <div class="materials-list">
-      {% for m in materials %}
-      <div class="material-item">
-        <span class="material-icon">📄</span>
-        <div class="material-info">
-          <div class="material-name">{{ m.original_name }}</div>
-          <div class="material-date">Uploaded {{ m.uploaded_at.strftime('%d %b %Y') if m.uploaded_at else '' }}</div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty-state">
-      <div class="empty-state-icon">📂</div>
-      <h3>No materials yet</h3>
-      {% if session.role == 'instructor' %}
-      <p>Upload lecture PDFs to train the AI and make them available to students.</p>
-      <a href="/classroom/{{ classroom.id }}/upload_lectures" class="btn btn-primary">Upload Now</a>
-      {% else %}
-      <p>Your instructor hasn't uploaded any materials yet.</p>
-      {% endif %}
-    </div>
-    {% endif %}
-  </div>
-
-  <!-- TAB: MEMBERS -->
-  <div class="tab-panel" id="tab-members">
-    <div class="members-count">{{ members|length }} student(s) enrolled</div>
-    {% if members %}
-    <div class="members-list">
-      {% for m in members %}
-      <div class="member-item">
-        <div class="member-avatar">{{ m.full_name[0].upper() }}</div>
-        <div class="member-info">
-          <div class="member-name">{{ m.full_name }}</div>
-          <div class="member-email">{{ m.email }}</div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty-state">
-      <div class="empty-state-icon">👥</div>
-      <h3>No students yet</h3>
-      <p>Share the code <strong>{{ classroom.code }}</strong> with your students.</p>
-    </div>
-    {% endif %}
-  </div>
-
-</div>
+{% block extra_head %}
+<style>
+.chat-window { display:flex; flex-direction:column; height:480px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-lg); overflow:hidden; }
+.chat-messages { flex:1; overflow-y:auto; padding:var(--space-4); display:flex; flex-direction:column; gap:var(--space-3); }
+.chat-bubble { max-width:80%; padding:var(--space-3) var(--space-4); border-radius:var(--radius-lg); font-size:var(--text-sm); line-height:1.6; }
+.chat-bubble.user { align-self:flex-end; background:var(--color-primary); color:#fff; border-bottom-right-radius:var(--radius-sm); }
+.chat-bubble.assistant { align-self:flex-start; background:var(--color-surface-offset); color:var(--color-text); border-bottom-left-radius:var(--radius-sm); }
+.chat-bubble .bubble-meta { font-size:0.7rem; opacity:0.7; margin-top:var(--space-1); }
+.chat-input-row { display:flex; gap:var(--space-2); padding:var(--space-3); border-top:1px solid var(--color-border); background:var(--color-surface-2); }
+.chat-input-row input { flex:1; padding:var(--space-2) var(--space-4); border:1px solid var(--color-border); border-radius:var(--radius-full); background:var(--color-bg); font-size:var(--text-sm); outline:none; }
+.chat-input-row input:focus { border-color:var(--color-primary); }
+.chat-send-btn { padding:var(--space-2) var(--space-5); border-radius:var(--radius-full); background:var(--color-primary); color:#fff; border:none; cursor:pointer; font-size:var(--text-sm); font-weight:600; transition:background var(--transition-interactive); }
+.chat-send-btn:hover { background:var(--color-primary-hover); }
+.chat-send-btn:disabled { opacity:0.6; cursor:not-allowed; }
+.typing-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--color-text-muted); margin:0 2px; animation:bounce 1.2s infinite; }
+.typing-dot:nth-child(2){animation-delay:.2s} .typing-dot:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
+.train-btn { display:inline-flex; align-items:center; gap:var(--space-2); }
+.train-btn .spinner { width:16px; height:16px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; display:none; }
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
 {% endblock %}
 
-{% block scripts %}
+{% block content %}
+<div class="page-container">
+  <!-- Header -->
+  <div class="page-header">
+    <div>
+      <a href="{{ url_for('dashboard') }}" class="btn btn-ghost btn-sm">← Dashboard</a>
+      <h1 style="margin-top:var(--space-2)">{{ classroom.name }}</h1>
+      {% if classroom.subject %}<span class="badge badge-primary">{{ classroom.subject }}</span>{% endif %}
+    </div>
+    {% if session.role == 'instructor' %}
+    <div style="display:flex;gap:var(--space-2);align-items:center">
+      <div class="classroom-code-row">
+        <span class="code-label">Code:</span>
+        <span class="code-value" id="cls-code">{{ classroom.code }}</span>
+        <button class="btn-copy" onclick="copyCode('{{ classroom.code }}','cls-code')">Copy</button>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="classroom-layout">
+    <!-- LEFT: Main content -->
+    <div class="classroom-main">
+
+      <!-- AI Chatbot -->
+      <div class="card">
+        <div class="card-header">
+          <h2>🤖 AI Assistant</h2>
+          <span class="badge {% if indexed %}badge-success{% else %}badge-warning{% endif %}">
+            {% if indexed %}Trained on your notes{% else %}Not trained yet{% endif %}
+          </span>
+        </div>
+        <div class="chat-window" id="chatWindow">
+          <div class="chat-messages" id="chatMessages">
+            <!-- Pre-load history -->
+            {% for msg in chat_history %}
+            <div class="chat-bubble {{ msg.role }}">
+              {{ msg.message }}
+              <div class="bubble-meta">
+                {{ msg.full_name }} · {{ msg.created_at.strftime('%H:%M') if msg.created_at }}
+              </div>
+            </div>
+            {% endfor %}
+            {% if not chat_history %}
+            <div class="chat-bubble assistant">
+              👋 Hi! I'm your AI assistant for <strong>{{ classroom.name }}</strong>.
+              {% if indexed %}
+              I've been trained on the course materials. Ask me anything!
+              {% else %}
+              The instructor hasn't trained me on course materials yet, but I can still answer general questions!
+              {% endif %}
+            </div>
+            {% endif %}
+          </div>
+          <div class="chat-input-row">
+            <input type="text" id="chatInput" placeholder="Ask about lectures, deadlines, study plans..." onkeydown="if(event.key==='Enter')sendMessage()">
+            <button class="chat-send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+          </div>
+        </div>
+        {% if not indexed and session.role == 'instructor' %}
+        <div class="card-footer" style="margin-top:var(--space-3)">
+          <p class="text-muted" style="font-size:var(--text-sm)">Upload lecture PDFs and train the AI so students get answers grounded in your material.</p>
+          <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
+            <a href="{{ url_for('upload_lectures', classroom_id=classroom.id) }}" class="btn btn-secondary btn-sm">📤 Upload Lectures</a>
+            <button class="btn btn-primary btn-sm train-btn" id="trainBtn" onclick="trainAI({{ classroom.id }})">
+              <span class="spinner" id="trainSpinner"></span>
+              🧠 Train AI Now
+            </button>
+          </div>
+        </div>
+        {% elif indexed and session.role == 'instructor' %}
+        <div class="card-footer" style="margin-top:var(--space-3);display:flex;gap:var(--space-2)">
+          <a href="{{ url_for('upload_lectures', classroom_id=classroom.id) }}" class="btn btn-ghost btn-sm">📤 Add More Lectures</a>
+          <button class="btn btn-secondary btn-sm train-btn" id="trainBtn" onclick="trainAI({{ classroom.id }})">
+            <span class="spinner" id="trainSpinner"></span>
+            🔄 Re-Train AI
+          </button>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Lecture Materials -->
+      <div class="card" style="margin-top:var(--space-6)">
+        <div class="card-header">
+          <h2>📚 Lecture Materials</h2>
+          {% if session.role == 'instructor' %}
+          <a href="{{ url_for('upload_lectures', classroom_id=classroom.id) }}" class="btn btn-primary btn-sm">+ Upload</a>
+          {% endif %}
+        </div>
+        {% if materials %}
+        <div class="materials-list">
+          {% for m in materials %}
+          <div class="material-item">
+            <span class="material-icon">📄</span>
+            <div class="material-info">
+              <span class="material-name">{{ m.original_name }}</span>
+              <span class="text-muted" style="font-size:var(--text-xs)">{{ m.uploaded_at.strftime('%b %d, %Y') if m.uploaded_at }}</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted" style="padding:var(--space-4)">
+          No lecture materials yet.
+          {% if session.role == 'instructor' %}Upload your PDFs to train the AI chatbot.{% endif %}
+        </p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- RIGHT: Sidebar -->
+    <div class="classroom-sidebar">
+
+      <!-- Class info -->
+      <div class="card">
+        <h3 class="card-title">Class Info</h3>
+        <dl class="info-list">
+          <dt>Instructor</dt><dd>{{ classroom.instructor_name }}</dd>
+          {% if classroom.subject %}<dt>Subject</dt><dd>{{ classroom.subject }}</dd>{% endif %}
+          <dt>Students</dt><dd>{{ members|length }}</dd>
+          {% if session.role == 'instructor' %}
+          <dt>Class Code</dt>
+          <dd><strong style="letter-spacing:0.1em">{{ classroom.code }}</strong></dd>
+          {% endif %}
+        </dl>
+      </div>
+
+      <!-- Members -->
+      <div class="card" style="margin-top:var(--space-4)">
+        <h3 class="card-title">Members ({{ members|length }})</h3>
+        {% if members %}
+        <ul class="member-list">
+          {% for m in members %}
+          <li class="member-item">
+            <div class="member-avatar">{{ m.full_name[0].upper() }}</div>
+            <div>
+              <div class="member-name">{{ m.full_name }}</div>
+              <div class="member-email text-muted">{{ m.email }}</div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted">No students yet.</p>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <script>
-// ── Tab switching
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-  });
-});
-
-// ── Copy code
-const codeEl = document.getElementById('classCode');
-if (codeEl) {
-  codeEl.style.cursor = 'pointer';
-  codeEl.addEventListener('click', () => {
-    navigator.clipboard.writeText(codeEl.textContent.trim());
-    const orig = codeEl.textContent;
-    codeEl.textContent = 'Copied!';
-    setTimeout(() => codeEl.textContent = orig, 1500);
-  });
-}
-
-// ── Chat
-const chatMessages = document.getElementById('chatMessages');
-const chatInput    = document.getElementById('chatInput');
+const CLASSROOM_ID = {{ classroom.id }};
 
 function scrollToBottom() {
-  if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+  const msgs = document.getElementById('chatMessages');
+  msgs.scrollTop = msgs.scrollHeight;
 }
 scrollToBottom();
 
 function appendBubble(role, text, name) {
-  const empty = chatMessages.querySelector('.chat-empty');
-  if (empty) empty.remove();
-
+  const msgs = document.getElementById('chatMessages');
   const div = document.createElement('div');
   div.className = `chat-bubble ${role}`;
-  div.innerHTML = `
-    <div class="bubble-meta">${name}</div>
-    <div class="bubble-text">${text.replace(/\n/g, '<br>')}</div>
-    <div class="bubble-time">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>
-  `;
-  chatMessages.appendChild(div);
+  div.innerHTML = `${text.replace(/\n/g,'<br>')}<div class="bubble-meta">${name}</div>`;
+  msgs.appendChild(div);
+  scrollToBottom();
+  return div;
+}
+
+function showTyping() {
+  const msgs = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'chat-bubble assistant';
+  div.id = 'typingIndicator';
+  div.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
+  msgs.appendChild(div);
   scrollToBottom();
 }
 
-async function sendChat(classroomId) {
-  const q = chatInput.value.trim();
-  if (!q) return;
+function removeTyping() {
+  const t = document.getElementById('typingIndicator');
+  if (t) t.remove();
+}
 
-  chatInput.value = '';
-  appendBubble('user', q, '{{ session.full_name }}');
+async function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const btn = document.getElementById('sendBtn');
+  const msg = input.value.trim();
+  if (!msg) return;
 
-  // Loading indicator
-  const loading = document.createElement('div');
-  loading.className = 'chat-bubble assistant loading';
-  loading.innerHTML = '<div class="bubble-text"><span class="typing-dots"><span></span><span></span><span></span></span></div>';
-  chatMessages.appendChild(loading);
-  scrollToBottom();
-
-  const sendBtn = document.getElementById('chatSendBtn');
-  sendBtn.disabled = true;
+  input.value = '';
+  btn.disabled = true;
+  appendBubble('user', msg, 'You');
+  showTyping();
 
   try {
-    const res  = await fetch(`/classroom/${classroomId}/chat`, {
-      method:  'POST',
+    const res = await fetch(`/classroom/${CLASSROOM_ID}/chat`, {
+      method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body:    JSON.stringify({message: q}),
+      body: JSON.stringify({message: msg})
     });
     const data = await res.json();
-    loading.remove();
-    if (data.answer) {
-      appendBubble('assistant', data.answer, 'NeuroBot');
-    } else {
-      appendBubble('assistant', data.error || 'Something went wrong.', 'NeuroBot');
-    }
+    removeTyping();
+    appendBubble('assistant', data.answer || data.error || 'Error', '🤖 AI Assistant');
   } catch(e) {
-    loading.remove();
-    appendBubble('assistant', 'Network error. Please try again.', 'NeuroBot');
+    removeTyping();
+    appendBubble('assistant', '❌ Network error. Please try again.', '🤖 AI Assistant');
   } finally {
-    sendBtn.disabled = false;
-    chatInput.focus();
+    btn.disabled = false;
+    input.focus();
   }
 }
 
-// Send on Enter
-if (chatInput) {
-  chatInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      const classroomId = {{ classroom.id }};
-      sendChat(classroomId);
-    }
-  });
-}
-
-// ── Train AI
 async function trainAI(classroomId) {
-  const btn = document.getElementById('trainAiBtn');
-  if (!btn) return;
+  const btn = document.getElementById('trainBtn');
+  const spinner = document.getElementById('trainSpinner');
   btn.disabled = true;
-  btn.textContent = '⏳ Training… (this may take 30–60s)';
+  spinner.style.display = 'inline-block';
+  btn.childNodes[btn.childNodes.length-1].textContent = ' Training...';
 
   try {
-    const res  = await fetch(`/classroom/${classroomId}/train_ai`, {method: 'POST'});
+    const res = await fetch(`/classroom/${classroomId}/train_ai`, {method:'POST'});
     const data = await res.json();
     if (data.ok) {
-      btn.textContent = `✅ Trained! (${data.pages} pages, ${data.chunks} chunks)`;
-      btn.style.background = 'var(--color-success)';
-      // Update status dot
-      const dot = document.querySelector('.status-dot.red');
-      if (dot) { dot.classList.replace('red','green'); }
-      const statusText = document.querySelector('.ai-status-bar span:last-of-type');
-      if (statusText) statusText.textContent = 'AI trained successfully! Students can now chat.';
+      alert('✅ ' + data.message + '\n\nReload the page to see the updated AI status.');
+      location.reload();
     } else {
-      btn.textContent = '❌ Failed: ' + (data.error || 'Unknown error');
-      btn.style.background = 'var(--color-error)';
-      btn.disabled = false;
+      alert('❌ ' + (data.error || 'Training failed'));
     }
   } catch(e) {
-    btn.textContent = '❌ Network error';
+    alert('❌ Network error during training.');
+  } finally {
     btn.disabled = false;
+    spinner.style.display = 'none';
   }
+}
+
+function copyCode(code, elemId) {
+  navigator.clipboard.writeText(code).then(() => {
+    const el = document.getElementById(elemId);
+    const orig = el.textContent;
+    el.textContent = 'Copied!';
+    el.style.color = 'var(--color-success)';
+    setTimeout(() => { el.textContent = orig; el.style.color = ''; }, 2000);
+  });
 }
 </script>
 {% endblock %}

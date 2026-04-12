@@ -1,82 +1,61 @@
 # NeuroClass — AI-Powered Classroom Platform
 
-NeuroClass is a full-stack educational platform built with Flask + MySQL, featuring AI-graded assignments, RAG-powered chatbots trained on lecture notes, and classroom management.
-
-## Tech Stack
-- **Backend**: Python / Flask
-- **Database**: MySQL (local)
-- **Frontend**: Jinja2 templates + Vanilla CSS/JS
-- **AI Layer**: LangChain + LangGraph (see `app.py` for agent code)
+Flask + MySQL + LangChain + LangGraph + FAISS RAG
 
 ## Quick Start
 
-### 1. Install Dependencies
+### 1. Clone & install
 ```bash
+git clone https://github.com/Arhanpg/Neuro-class-final
+cd Neuro-class-final
 pip install -r requirements.txt
 ```
 
-### 2. Set Up MySQL Database
-Make sure MySQL is running on your machine, then:
+### 2. Configure environment
+```bash
+cp .env.example .env
+# Edit .env — add MySQL password and API keys
+```
+
+### 3. Setup MySQL database
 ```bash
 mysql -u root -p < setup_db.sql
 ```
+> ⚠️ If you already ran an older version of `setup_db.sql`, run it again — it uses `CREATE TABLE IF NOT EXISTS` so it's safe to re-run.
 
-### 3. Configure Environment (optional)
-You can set these environment variables or edit `config.py`:
-```bash
-export MYSQL_HOST=localhost
-export MYSQL_USER=root
-export MYSQL_PASSWORD=your_password
-export MYSQL_DB=neuroclass
-export SECRET_KEY=your-secret-key
-```
-
-### 4. Run the App
+### 4. Run
 ```bash
 python app.py
 ```
-Open http://localhost:5000 in your browser.
+Open http://localhost:5000
 
-## Features (Phase 1 — Current)
-- [x] Landing page with role selection (Student / Instructor)
-- [x] Registration & Login for both roles
-- [x] Instructor: Create classroom + auto-generate 8-char join code
-- [x] Student: Join classroom using code
-- [x] Dashboard for both roles
-- [x] View classroom members
-- [x] Light/Dark mode
+---
 
-## Features (Phase 2 — Coming Soon)
-- [ ] AI Chatbot (RAG on lecture notes)
-- [ ] Assignment upload (PDF/text) & AI grading
-- [ ] Project submission via GitHub repo link
-- [ ] Leaderboard for assignments & projects
-- [ ] Grade editing by instructor
-- [ ] File upload (local storage)
+## Features (Phase 1 + 2)
 
-## Project Structure
+| Feature | Status |
+|---|---|
+| Login as Student / Instructor | ✅ |
+| Instructor creates classroom + auto code | ✅ |
+| Student joins via code | ✅ |
+| Instructor uploads lecture PDFs | ✅ |
+| One-click AI training (RAG / FAISS) | ✅ |
+| AI Chatbot in every classroom | ✅ |
+| Fallback LLM chain (Gemini → OpenRouter → Groq) | ✅ |
+| Dark / Light mode toggle | ✅ |
+| Assignment submission + AI grading | 🔜 Phase 3 |
+| Project submission via GitHub link | 🔜 Phase 3 |
+| Leaderboard | 🔜 Phase 3 |
+
+## AI Keys
+Get free API keys from:
+- **Gemini**: https://aistudio.google.com/app/apikey
+- **OpenRouter**: https://openrouter.ai (free Llama-3.3-70B)
+- **Groq**: https://console.groq.com
+
+Add to `.env`:
 ```
-Neuro-class-final/
-├── app.py              # Flask routes & logic
-├── config.py           # Configuration
-├── models.py           # DB helper
-├── setup_db.sql        # MySQL schema
-├── requirements.txt
-├── templates/
-│   ├── base.html
-│   ├── index.html
-│   ├── auth/
-│   │   ├── login.html
-│   │   └── register.html
-│   ├── dashboard/
-│   │   ├── teacher.html
-│   │   └── student.html
-│   └── classroom/
-│       ├── create.html
-│       ├── join.html
-│       └── view.html
-├── static/
-│   ├── css/style.css
-│   └── js/main.js
-└── uploads/            # Local file storage (auto-created)
+GEMINI_API_KEY=...
+OPENROUTER_API_KEY=...
+GROQ_API_KEY=...
 ```

@@ -1,62 +1,35 @@
 {% extends 'base.html' %}
-{% block title %}Create Account — NeuroClass{% endblock %}
+{% block title %}Register — NeuroClass{% endblock %}
 {% block content %}
-<div class="auth-wrapper">
-    <div class="auth-card">
-        <div class="auth-header">
-            <div class="auth-role-icon {{ role }}-icon">
-                {% if role == 'instructor' %}
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/></svg>
-                {% else %}
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a8.38 8.38 0 0113 0"/></svg>
-                {% endif %}
-            </div>
-            <h2>Create {{ 'Instructor' if role == 'instructor' else 'Student' }} Account</h2>
-            <p class="auth-subtitle">Join NeuroClass today</p>
-        </div>
-
-        <form method="POST" class="auth-form">
-            <input type="hidden" name="role" value="{{ role }}">
-
-            <div class="form-group">
-                <label for="full_name">Full Name</label>
-                <input type="text" id="full_name" name="full_name" required placeholder="Your full name" autocomplete="name">
-            </div>
-
-            <div class="form-group">
-                <label for="email">Email address</label>
-                <input type="email" id="email" name="email" required placeholder="you@example.com" autocomplete="email">
-            </div>
-
-            <div class="form-group">
-                <label for="password">Password</label>
-                <div class="password-input">
-                    <input type="password" id="password" name="password" required placeholder="At least 6 characters" autocomplete="new-password">
-                    <button type="button" class="toggle-password" onclick="togglePassword('password')">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                    </button>
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label for="confirm_password">Confirm Password</label>
-                <div class="password-input">
-                    <input type="password" id="confirm_password" name="confirm_password" required placeholder="Repeat your password" autocomplete="new-password">
-                    <button type="button" class="toggle-password" onclick="togglePassword('confirm_password')">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                    </button>
-                </div>
-            </div>
-
-            <button type="submit" class="btn btn-primary btn-full">Create Account</button>
-        </form>
-
-        <div class="auth-footer">
-            <p>Already have an account? <a href="{{ url_for('login', role=role) }}">Sign in</a></p>
-            <p class="role-switch">Not an {{ 'instructor' if role == 'instructor' else 'student' }}? 
-                <a href="{{ url_for('register', role='student' if role == 'instructor' else 'instructor') }}">Register as {{ 'student' if role == 'instructor' else 'instructor' }}</a>
-            </p>
-        </div>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-icon">{% if role == 'instructor' %}🎓{% else %}📖{% endif %}</div>
+    <h1>Create account</h1>
+    <p class="auth-sub">Registering as <strong>{{ role }}</strong></p>
+    <form method="POST" action="{{ url_for('register') }}">
+      <input type="hidden" name="role" value="{{ role }}">
+      <div class="form-group">
+        <label for="full_name">Full Name</label>
+        <input type="text" id="full_name" name="full_name" placeholder="Your name" required>
+      </div>
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="you@example.com" required>
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="Min 6 characters" required>
+      </div>
+      <div class="form-group">
+        <label for="confirm_password">Confirm Password</label>
+        <input type="password" id="confirm_password" name="confirm_password" placeholder="Repeat password" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+    </form>
+    <div class="auth-footer">
+      <p>Already have an account? <a href="{{ url_for('login', role=role) }}">Log in</a></p>
+      <p><a href="{{ url_for('register', role='instructor' if role == 'student' else 'student') }}">Register as {{ 'Instructor' if role == 'student' else 'Student' }} instead</a></p>
     </div>
+  </div>
 </div>
 {% endblock %}

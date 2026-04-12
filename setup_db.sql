@@ -1,5 +1,6 @@
 -- NeuroClass Database Setup
--- Run: mysql -u root -p < setup_db.sql
+-- Run once: mysql -u root -p < setup_db.sql
+-- If you already ran the old version, run: mysql -u root -p neuroclass < setup_db.sql
 
 CREATE DATABASE IF NOT EXISTS neuroclass CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE neuroclass;
@@ -38,7 +39,7 @@ CREATE TABLE IF NOT EXISTS classroom_members (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Uploaded lecture materials
+-- Uploaded lecture materials (PDFs)
 CREATE TABLE IF NOT EXISTS lecture_materials (
     id INT AUTO_INCREMENT PRIMARY KEY,
     classroom_id INT NOT NULL,

@@ -19,7 +19,7 @@ from config import Config
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# MySQL
+# MySQL config
 app.config['MYSQL_HOST']     = Config.MYSQL_HOST
 app.config['MYSQL_USER']     = Config.MYSQL_USER
 app.config['MYSQL_PASSWORD'] = Config.MYSQL_PASSWORD
@@ -27,12 +27,8 @@ app.config['MYSQL_DB']       = Config.MYSQL_DB
 
 mysql = MySQL(app)
 
-# Ensure upload directories exist
-for d in [
-    Config.UPLOAD_FOLDER,
-    Config.LECTURES_BASE_DIR,
-    Config.RAG_INDEX_DIR,
-]:
+# Ensure upload directories exist on startup
+for d in [Config.UPLOAD_FOLDER, Config.LECTURES_BASE_DIR, Config.RAG_INDEX_DIR]:
     os.makedirs(d, exist_ok=True)
 
 ALLOWED_EXT = {'pdf', 'doc', 'docx', 'txt'}
@@ -59,7 +55,7 @@ def login_required(role=None):
                 flash('Please log in to continue.', 'warning')
                 return redirect(url_for('login'))
             if role and session.get('role') != role:
-                flash('Unauthorised.', 'danger')
+                flash('Unauthorised access.', 'danger')
                 return redirect(url_for('dashboard'))
             return f(*args, **kwargs)
         return decorated
@@ -147,7 +143,7 @@ def login():
 @app.route('/logout')
 def logout():
     session.clear()
-    flash('Logged out.', 'info')
+    flash('Logged out successfully.', 'info')
     return redirect(url_for('index'))
 
 
@@ -212,7 +208,8 @@ def create_classroom():
             return render_template('classroom/create.html')
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        while True:
+        # Unique code
+        for _ in range(10):
             code = generate_classroom_code()
             cursor.execute('SELECT id FROM classrooms WHERE code=%s', (code,))
             if not cursor.fetchone():
@@ -223,7 +220,7 @@ def create_classroom():
             (name, subject, description, code, session['user_id'])
         )
         mysql.connection.commit()
-        flash(f'Classroom "{name}" created! Code: {code}', 'success')
+        flash(f'Classroom "{name}" created! Share this code with students: {code}', 'success')
         return redirect(url_for('teacher_dashboard'))
 
     return render_template('classroom/create.html')
@@ -240,12 +237,14 @@ def join_classroom():
 
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute(
-            'SELECT c.*, u.full_name AS instructor_name FROM classrooms c JOIN users u ON c.instructor_id=u.id WHERE c.code=%s',
+            '''SELECT c.*, u.full_name AS instructor_name
+               FROM classrooms c JOIN users u ON c.instructor_id=u.id
+               WHERE c.code=%s''',
             (code,)
         )
         classroom = cursor.fetchone()
         if not classroom:
-            flash('Invalid code. Please try again.', 'danger')
+            flash('Invalid classroom code. Please check and try again.', 'danger')
             return render_template('classroom/join.html')
 
         cursor.execute(
@@ -254,15 +253,15 @@ def join_classroom():
         )
         if cursor.fetchone():
             flash('You have already joined this classroom.', 'info')
-            return redirect(url_for('student_dashboard'))
+            return redirect(url_for('view_classroom', classroom_id=classroom['id']))
 
         cursor.execute(
             'INSERT INTO classroom_members (classroom_id, user_id) VALUES (%s,%s)',
             (classroom['id'], session['user_id'])
         )
         mysql.connection.commit()
-        flash(f'Joined "{classroom["name"]}"!', 'success')
-        return redirect(url_for('student_dashboard'))
+        flash(f'Successfully joined "{classroom["name"]}"!', 'success')
+        return redirect(url_for('view_classroom', classroom_id=classroom['id']))
 
     return render_template('classroom/join.html')
 
@@ -274,7 +273,9 @@ def view_classroom(classroom_id):
 
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
     cursor.execute(
-        'SELECT c.*, u.full_name AS instructor_name FROM classrooms c JOIN users u ON c.instructor_id=u.id WHERE c.id=%s',
+        '''SELECT c.*, u.full_name AS instructor_name
+           FROM classrooms c JOIN users u ON c.instructor_id=u.id
+           WHERE c.id=%s''',
         (classroom_id,)
     )
     classroom = cursor.fetchone()
@@ -282,6 +283,7 @@ def view_classroom(classroom_id):
         flash('Classroom not found.', 'danger')
         return redirect(url_for('dashboard'))
 
+    # Access check
     if session['role'] == 'instructor' and classroom['instructor_id'] != session['user_id']:
         flash('Unauthorised.', 'danger')
         return redirect(url_for('dashboard'))
@@ -294,11 +296,13 @@ def view_classroom(classroom_id):
             flash('You are not a member of this classroom.', 'danger')
             return redirect(url_for('student_dashboard'))
 
-    # Members
+    # Members list
     cursor.execute(
         '''SELECT u.full_name, u.email, cm.joined_at
-           FROM classroom_members cm JOIN users u ON cm.user_id=u.id
-           WHERE cm.classroom_id=%s ORDER BY cm.joined_at''',
+           FROM classroom_members cm
+           JOIN users u ON cm.user_id = u.id
+           WHERE cm.classroom_id = %s
+           ORDER BY cm.joined_at''',
         (classroom_id,)
     )
     members = cursor.fetchall()
@@ -310,17 +314,18 @@ def view_classroom(classroom_id):
     )
     materials = cursor.fetchall()
 
-    # Chat history (last 50 messages)
+    # Last 50 chat messages
     cursor.execute(
         '''SELECT ch.role, ch.message, ch.created_at, u.full_name
-           FROM chat_history ch JOIN users u ON ch.user_id=u.id
-           WHERE ch.classroom_id=%s
-           ORDER BY ch.created_at ASC LIMIT 50''',
+           FROM chat_history ch
+           JOIN users u ON ch.user_id = u.id
+           WHERE ch.classroom_id = %s
+           ORDER BY ch.created_at ASC
+           LIMIT 50''',
         (classroom_id,)
     )
     chat_history = cursor.fetchall()
 
-    # Check if RAG indexed
     from ai_engine import is_indexed
     indexed = bool(classroom.get('rag_indexed')) or is_indexed(classroom_id)
 
@@ -340,7 +345,10 @@ def view_classroom(classroom_id):
 @login_required(role='instructor')
 def upload_lectures(classroom_id):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT * FROM classrooms WHERE id=%s AND instructor_id=%s', (classroom_id, session['user_id']))
+    cursor.execute(
+        'SELECT * FROM classrooms WHERE id=%s AND instructor_id=%s',
+        (classroom_id, session['user_id'])
+    )
     classroom = cursor.fetchone()
     if not classroom:
         flash('Classroom not found.', 'danger')
@@ -350,7 +358,7 @@ def upload_lectures(classroom_id):
         files = request.files.getlist('lecture_files')
         if not files or all(f.filename == '' for f in files):
             flash('Please select at least one PDF file.', 'danger')
-            return render_template('classroom/upload_lectures.html', classroom=classroom)
+            return render_template('classroom/upload_lectures.html', classroom=classroom, materials=[])
 
         save_dir = Path(Config.LECTURES_BASE_DIR) / str(classroom_id)
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -358,9 +366,9 @@ def upload_lectures(classroom_id):
         saved = 0
         for f in files:
             if f and f.filename and allowed_file(f.filename):
-                orig = secure_filename(f.filename)
-                unique_name = f"{uuid.uuid4().hex}_{orig}"
-                fpath = save_dir / unique_name
+                orig        = secure_filename(f.filename)
+                unique_name = f'{uuid.uuid4().hex}_{orig}'
+                fpath       = save_dir / unique_name
                 f.save(str(fpath))
                 cursor.execute(
                     'INSERT INTO lecture_materials (classroom_id, filename, original_name, file_path) VALUES (%s,%s,%s,%s)',
@@ -370,13 +378,11 @@ def upload_lectures(classroom_id):
 
         mysql.connection.commit()
         if saved == 0:
-            flash('No valid PDF files were uploaded.', 'danger')
-            return render_template('classroom/upload_lectures.html', classroom=classroom)
-
-        flash(f'{saved} file(s) uploaded. Now click "Train AI" to index them.', 'success')
+            flash('No valid files were uploaded. Accepted formats: PDF, DOC, DOCX, TXT.', 'danger')
+        else:
+            flash(f'{saved} file(s) uploaded successfully. Click "Train AI" to index them.', 'success')
         return redirect(url_for('view_classroom', classroom_id=classroom_id))
 
-    # GET
     cursor.execute(
         'SELECT * FROM lecture_materials WHERE classroom_id=%s ORDER BY uploaded_at DESC',
         (classroom_id,)
@@ -385,26 +391,28 @@ def upload_lectures(classroom_id):
     return render_template('classroom/upload_lectures.html', classroom=classroom, materials=materials)
 
 
-# ─── TEACHER: TRAIN AI (build RAG index) ──────────────────────────────────
+# ─── TEACHER: TRAIN AI ────────────────────────────────────────────────────
 
 @app.route('/classroom/<int:classroom_id>/train_ai', methods=['POST'])
 @login_required(role='instructor')
 def train_ai(classroom_id):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT * FROM classrooms WHERE id=%s AND instructor_id=%s', (classroom_id, session['user_id']))
+    cursor.execute(
+        'SELECT * FROM classrooms WHERE id=%s AND instructor_id=%s',
+        (classroom_id, session['user_id'])
+    )
     classroom = cursor.fetchone()
     if not classroom:
-        return jsonify({'ok': False, 'error': 'Not found'}), 404
+        return jsonify({'ok': False, 'error': 'Classroom not found'}), 404
 
-    # Check if any PDFs exist
     lecture_dir = Path(Config.LECTURES_BASE_DIR) / str(classroom_id)
     if not lecture_dir.exists() or not list(lecture_dir.glob('*.pdf')):
-        return jsonify({'ok': False, 'error': 'No lecture PDFs uploaded yet. Upload PDFs first.'})
+        return jsonify({'ok': False, 'error': 'No PDF files found. Please upload lecture PDFs first.'})
 
     from ai_engine import build_rag_index
     result = build_rag_index(classroom_id)
 
-    if result['ok']:
+    if result.get('ok'):
         cursor.execute('UPDATE classrooms SET rag_indexed=1 WHERE id=%s', (classroom_id,))
         mysql.connection.commit()
 
@@ -419,29 +427,24 @@ def classroom_chat(classroom_id):
         return jsonify({'error': 'Not logged in'}), 401
 
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-
-    # Verify access
     cursor.execute('SELECT * FROM classrooms WHERE id=%s', (classroom_id,))
     classroom = cursor.fetchone()
     if not classroom:
         return jsonify({'error': 'Classroom not found'}), 404
 
+    # Access check for students
     if session['role'] == 'student':
         cursor.execute(
             'SELECT id FROM classroom_members WHERE classroom_id=%s AND user_id=%s',
             (classroom_id, session['user_id'])
         )
         if not cursor.fetchone():
-            return jsonify({'error': 'Not a member'}), 403
+            return jsonify({'error': 'Not a member of this classroom'}), 403
 
     data     = request.get_json()
     question = (data or {}).get('message', '').strip()
     if not question:
-        return jsonify({'error': 'Empty message'}), 400
-
-    # Build context_data: assignments + deadlines from DB
-    # (extend this when assignments table is added in Phase 3)
-    context_data = {}
+        return jsonify({'error': 'Message cannot be empty'}), 400
 
     # Save user message
     cursor.execute(
@@ -449,6 +452,9 @@ def classroom_chat(classroom_id):
         (classroom_id, session['user_id'], 'user', question)
     )
     mysql.connection.commit()
+
+    # Build context_data for smart answers (assignments, deadlines, etc.)
+    context_data = {'class_name': classroom['name']}
 
     from ai_engine import rag_query
     answer = rag_query(classroom_id, question, context_data)
@@ -463,13 +469,27 @@ def classroom_chat(classroom_id):
     return jsonify({'answer': answer})
 
 
-# ─── API helpers ──────────────────────────────────────────────────────────
+# ─── SERVE UPLOADED FILES ─────────────────────────────────────────────────
+
+@app.route('/uploads/lectures/<int:classroom_id>/<filename>')
+def serve_lecture(classroom_id, filename):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    from flask import send_from_directory
+    folder = os.path.join(Config.LECTURES_BASE_DIR, str(classroom_id))
+    return send_from_directory(folder, filename)
+
+
+# ─── API HELPERS ──────────────────────────────────────────────────────────
 
 @app.route('/api/classroom/<int:classroom_id>/code')
 @login_required(role='instructor')
 def get_classroom_code(classroom_id):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-    cursor.execute('SELECT code FROM classrooms WHERE id=%s AND instructor_id=%s', (classroom_id, session['user_id']))
+    cursor.execute(
+        'SELECT code FROM classrooms WHERE id=%s AND instructor_id=%s',
+        (classroom_id, session['user_id'])
+    )
     c = cursor.fetchone()
     if not c:
         return jsonify({'error': 'Not found'}), 404

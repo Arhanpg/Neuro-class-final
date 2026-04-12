@@ -1,44 +1,39 @@
 {% extends 'base.html' %}
 {% block title %}NeuroClass — AI-Powered Classroom{% endblock %}
 {% block content %}
-<div class="hero-section">
-    <div class="hero-content">
-        <div class="hero-badge">Powered by AI Agents</div>
-        <h1 class="hero-title">The Intelligent<br><em>Classroom Platform</em></h1>
-        <p class="hero-subtitle">NeuroClass brings AI-graded assignments, RAG-powered chatbots trained on your lecture notes, and real-time leaderboards to your classroom.</p>
-        <div class="hero-cta-group">
-            <div class="role-card" onclick="window.location.href='{{ url_for('login', role='instructor') }}'">
-                <div class="role-icon instructor-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                        <path d="M12 14l9-5-9-5-9 5 9 5z"/>
-                        <path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/>
-                    </svg>
-                </div>
-                <h3>I'm an Instructor</h3>
-                <p>Create classrooms, upload notes, assign work, and let AI grade submissions.</p>
-                <span class="role-link">Sign in as Instructor &rarr;</span>
-            </div>
-            <div class="role-card" onclick="window.location.href='{{ url_for('login', role='student') }}'">
-                <div class="role-icon student-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                        <circle cx="12" cy="7" r="4"/>
-                        <path d="M5.5 21a8.38 8.38 0 0113 0"/>
-                    </svg>
-                </div>
-                <h3>I'm a Student</h3>
-                <p>Join classrooms, chat with the AI tutor, submit assignments and view your rank.</p>
-                <span class="role-link">Sign in as Student &rarr;</span>
-            </div>
-        </div>
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge">Powered by Gemini · LangChain · LangGraph</div>
+    <h1 class="hero-title">The AI-Powered<br>Classroom Platform</h1>
+    <p class="hero-sub">Upload lecture notes → Train AI in one click → Students get 24/7 answers based on your exact material.</p>
+    <div class="hero-actions">
+      <a href="{{ url_for('register', role='instructor') }}" class="btn btn-primary btn-lg">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        I'm an Instructor
+      </a>
+      <a href="{{ url_for('register', role='student') }}" class="btn btn-secondary btn-lg">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+        I'm a Student
+      </a>
     </div>
-    <div class="hero-visual">
-        <div class="feature-pills">
-            <div class="pill">&#129504; RAG Chatbot</div>
-            <div class="pill">&#127919; AI Grading</div>
-            <div class="pill">&#127941; Leaderboard</div>
-            <div class="pill">&#128196; Smart Assignments</div>
-            <div class="pill">&#128279; GitHub Projects</div>
-        </div>
+    <p class="hero-login">Already have an account? <a href="{{ url_for('login') }}">Log in</a></p>
+  </div>
+  <div class="hero-features">
+    <div class="feature-card">
+      <div class="feature-icon">🧠</div>
+      <h3>RAG-Powered Chatbot</h3>
+      <p>Answers grounded in your exact lecture notes. No hallucinations about your course content.</p>
     </div>
+    <div class="feature-card">
+      <div class="feature-icon">📚</div>
+      <h3>Smart Classroom</h3>
+      <p>Create classrooms, share a code, and students join instantly. All materials in one place.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <h3>Fallback LLM Chain</h3>
+      <p>Gemini → OpenRouter → Groq. If one quota runs out, another kicks in automatically.</p>
+    </div>
+  </div>
 </div>
 {% endblock %}

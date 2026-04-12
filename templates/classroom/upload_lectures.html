@@ -1,135 +1,36 @@
 {% extends 'base.html' %}
 {% block title %}Upload Lectures — {{ classroom.name }}{% endblock %}
-
 {% block content %}
 <div class="page-container">
   <div class="page-header">
-    <a href="/classroom/{{ classroom.id }}" class="back-link">← Back to Classroom</a>
+    <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-ghost btn-sm">← Back to Class</a>
     <h1>Upload Lecture Materials</h1>
-    <p class="page-subtitle">Upload PDF lecture notes to train the AI. The AI will answer student questions based on these materials.</p>
   </div>
 
-  <!-- Upload form -->
-  <div class="card upload-card">
-    <div class="card-header">
-      <h2>Upload PDFs</h2>
-      <span class="badge">Classroom: {{ classroom.name }}</span>
-    </div>
-    <form method="POST" enctype="multipart/form-data" class="upload-form">
-      <div class="drop-zone" id="dropZone">
-        <div class="drop-zone-inner">
-          <div class="drop-icon">📄</div>
-          <p>Drag & drop lecture PDFs here</p>
-          <p class="drop-sub">or</p>
-          <label class="btn btn-primary" for="lectureFiles">Browse Files</label>
-          <input
-            type="file"
-            id="lectureFiles"
-            name="lecture_files"
-            multiple
-            accept=".pdf"
-            style="display:none"
-            onchange="updateFileList(this)"
-          />
-        </div>
-        <div class="selected-files" id="selectedFiles"></div>
+  <div class="form-card">
+    <p>Upload PDFs of your lecture notes. After uploading, click <strong>Train AI</strong> in the classroom to index them for the chatbot.</p>
+    <form method="POST" action="{{ url_for('upload_lectures', classroom_id=classroom.id) }}" enctype="multipart/form-data" style="margin-top:var(--space-6)">
+      <div class="form-group">
+        <label for="lecture_files">Select PDF / DOC / TXT files</label>
+        <input type="file" id="lecture_files" name="lecture_files" multiple accept=".pdf,.doc,.docx,.txt" class="file-input">
       </div>
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary btn-lg">Upload & Save</button>
-      </div>
+      <button type="submit" class="btn btn-primary">Upload Files</button>
     </form>
   </div>
 
-  <!-- Train AI section -->
-  <div class="card train-card">
-    <div class="card-header">
-      <h2>⚡ Train AI on Lecture Notes</h2>
-    </div>
-    <p>After uploading PDFs, click below to build the RAG index. This embeds all lecture content into a vector database so the chatbot can answer student questions accurately.</p>
-    {% if materials %}
-      <p class="train-info">📚 <strong>{{ materials|length }}</strong> file(s) currently in the system.</p>
-    {% endif %}
-    <div class="train-actions">
-      <button class="btn btn-primary btn-lg" id="trainBtn" onclick="trainAI({{ classroom.id }})">
-        ⚡ Train AI Now
-      </button>
-      <div class="train-status" id="trainStatus"></div>
-    </div>
-  </div>
-
-  <!-- Existing materials -->
   {% if materials %}
-  <div class="card">
-    <div class="card-header">
-      <h2>📁 Uploaded Files</h2>
-    </div>
-    <div class="materials-list">
-      {% for m in materials %}
-      <div class="material-item">
-        <span class="material-icon">📄</span>
-        <div class="material-info">
-          <div class="material-name">{{ m.original_name }}</div>
-          <div class="material-date">{{ m.uploaded_at.strftime('%d %b %Y, %H:%M') if m.uploaded_at else '' }}</div>
-        </div>
+  <div class="section-header"><h2>Uploaded Materials ({{ materials|length }})</h2></div>
+  <div class="materials-list">
+    {% for m in materials %}
+    <div class="material-item">
+      <span class="material-icon">📄</span>
+      <div class="material-info">
+        <span class="material-name">{{ m.original_name }}</span>
+        <span class="material-date text-muted">{{ m.uploaded_at.strftime('%b %d, %Y %H:%M') if m.uploaded_at }}</span>
       </div>
-      {% endfor %}
     </div>
+    {% endfor %}
   </div>
   {% endif %}
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-function updateFileList(input) {
-  const container = document.getElementById('selectedFiles');
-  container.innerHTML = '';
-  Array.from(input.files).forEach(f => {
-    const div = document.createElement('div');
-    div.className = 'selected-file-item';
-    div.textContent = `📄 ${f.name} (${(f.size/1024).toFixed(1)} KB)`;
-    container.appendChild(div);
-  });
-}
-
-// Drag & Drop
-const dz = document.getElementById('dropZone');
-if (dz) {
-  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
-  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-  dz.addEventListener('drop', e => {
-    e.preventDefault();
-    dz.classList.remove('drag-over');
-    const inp = document.getElementById('lectureFiles');
-    inp.files = e.dataTransfer.files;
-    updateFileList(inp);
-  });
-}
-
-async function trainAI(classroomId) {
-  const btn    = document.getElementById('trainBtn');
-  const status = document.getElementById('trainStatus');
-  btn.disabled = true;
-  btn.textContent = '⏳ Training… (30–60s depending on PDF size)';
-  status.textContent = '';
-
-  try {
-    const res  = await fetch(`/classroom/${classroomId}/train_ai`, {method: 'POST'});
-    const data = await res.json();
-    if (data.ok) {
-      btn.textContent = '✅ AI Trained!';
-      btn.style.background = 'var(--color-success)';
-      status.innerHTML = `<span style="color:var(--color-success)">✓ Indexed <strong>${data.files}</strong> file(s), <strong>${data.pages}</strong> pages, <strong>${data.chunks}</strong> chunks. The chatbot is now ready!</span>`;
-    } else {
-      btn.textContent = '⚡ Train AI Now';
-      btn.disabled = false;
-      status.innerHTML = `<span style="color:var(--color-error)">❌ ${data.error}</span>`;
-    }
-  } catch(e) {
-    btn.textContent = '⚡ Train AI Now';
-    btn.disabled = false;
-    status.innerHTML = '<span style="color:var(--color-error)">❌ Network error. Please try again.</span>';
-  }
-}
-</script>
 {% endblock %}
