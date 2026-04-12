@@ -1067,5 +1067,581 @@ def get_classroom_code(classroom_id):
     return jsonify({'code': c['code']})
 
 
+# ─── TEACHER: ASSIGNMENT MANAGEMENT ─────────────────────────────────────────
+
+@app.route('/teacher/assignment/create', methods=['GET', 'POST'])
+@login_required(role='instructor')
+def teacher_create_assignment():
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        'SELECT id, name FROM classrooms WHERE instructor_id=%s ORDER BY name',
+        (session['user_id'],)
+    )
+    classrooms = cursor.fetchall()
+
+    if request.method == 'POST':
+        classroom_id  = request.form.get('classroom_id', type=int)
+        title         = sanitize_for_mysql(request.form.get('title', '').strip())
+        description   = sanitize_for_mysql(request.form.get('description', '').strip())
+        due_date_str  = request.form.get('due_date', '').strip()
+        max_attempts  = request.form.get('max_attempts', 1, type=int)
+        visibility    = request.form.get('visibility', 'published')
+        rubric_json   = request.form.get('rubric_json', '[]').strip()
+
+        # Validate ownership
+        cursor.execute(
+            'SELECT id FROM classrooms WHERE id=%s AND instructor_id=%s',
+            (classroom_id, session['user_id'])
+        )
+        if not cursor.fetchone():
+            flash('Invalid classroom.', 'danger')
+            return render_template('teacher/assignment_create.html', classrooms=classrooms)
+
+        # Validate rubric weights
+        try:
+            import json as _json
+            rubric_list = _json.loads(rubric_json)
+            if rubric_list:
+                total = sum(float(r.get('weight', 0)) for r in rubric_list)
+                if abs(total - 100) > 0.01:
+                    flash(f'Rubric weights must sum to 100 (got {total}).', 'danger')
+                    return render_template('teacher/assignment_create.html', classrooms=classrooms)
+        except Exception:
+            rubric_json = '[]'
+
+        due_date = None
+        if due_date_str:
+            try:
+                due_date = datetime.strptime(due_date_str, '%Y-%m-%dT%H:%M')
+            except ValueError:
+                pass
+
+        max_attempts = max(1, min(5, max_attempts))
+        if visibility not in ('draft', 'published', 'closed'):
+            visibility = 'published'
+
+        cursor.execute(
+            '''INSERT INTO assignments (classroom_id, title, description, due_date, rubric, visibility, max_attempts)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)''',
+            (classroom_id, title, description, due_date,
+             sanitize_for_mysql(rubric_json), visibility, max_attempts)
+        )
+        mysql.connection.commit()
+        flash('Assignment created successfully!', 'success')
+        return redirect(url_for('teacher_dashboard'))
+
+    return render_template('teacher/assignment_create.html', classrooms=classrooms)
+
+
+@app.route('/teacher/assignment/<int:aid>/edit', methods=['GET', 'POST'])
+@login_required(role='instructor')
+def teacher_edit_assignment(aid):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        '''SELECT a.*, c.instructor_id FROM assignments a
+           JOIN classrooms c ON a.classroom_id = c.id
+           WHERE a.id=%s''',
+        (aid,)
+    )
+    assignment = cursor.fetchone()
+    if not assignment or assignment['instructor_id'] != session['user_id']:
+        flash('Assignment not found or access denied.', 'danger')
+        return redirect(url_for('teacher_dashboard'))
+
+    cursor.execute(
+        'SELECT id, name FROM classrooms WHERE instructor_id=%s ORDER BY name',
+        (session['user_id'],)
+    )
+    classrooms = cursor.fetchall()
+
+    if request.method == 'POST':
+        title         = sanitize_for_mysql(request.form.get('title', '').strip())
+        description   = sanitize_for_mysql(request.form.get('description', '').strip())
+        due_date_str  = request.form.get('due_date', '').strip()
+        max_attempts  = request.form.get('max_attempts', 1, type=int)
+        visibility    = request.form.get('visibility', 'published')
+        rubric_json   = request.form.get('rubric_json', '[]').strip()
+
+        try:
+            import json as _json
+            rubric_list = _json.loads(rubric_json)
+            if rubric_list:
+                total = sum(float(r.get('weight', 0)) for r in rubric_list)
+                if abs(total - 100) > 0.01:
+                    flash(f'Rubric weights must sum to 100 (got {total}).', 'danger')
+                    return render_template('teacher/assignment_edit.html',
+                                           assignment=assignment, classrooms=classrooms)
+        except Exception:
+            rubric_json = '[]'
+
+        due_date = None
+        if due_date_str:
+            try:
+                due_date = datetime.strptime(due_date_str, '%Y-%m-%dT%H:%M')
+            except ValueError:
+                pass
+
+        max_attempts = max(1, min(5, max_attempts))
+        if visibility not in ('draft', 'published', 'closed'):
+            visibility = 'published'
+
+        cursor.execute(
+            '''UPDATE assignments SET title=%s, description=%s, due_date=%s,
+               rubric=%s, visibility=%s, max_attempts=%s WHERE id=%s''',
+            (title, description, due_date,
+             sanitize_for_mysql(rubric_json), visibility, max_attempts, aid)
+        )
+        mysql.connection.commit()
+        flash('Assignment updated.', 'success')
+        return redirect(url_for('teacher_edit_assignment', aid=aid))
+
+    return render_template('teacher/assignment_edit.html',
+                           assignment=assignment, classrooms=classrooms)
+
+
+@app.route('/teacher/assignment/<int:aid>/delete', methods=['POST'])
+@login_required(role='instructor')
+def teacher_delete_assignment(aid):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        '''SELECT a.id, c.instructor_id FROM assignments a
+           JOIN classrooms c ON a.classroom_id = c.id WHERE a.id=%s''',
+        (aid,)
+    )
+    row = cursor.fetchone()
+    if not row or row['instructor_id'] != session['user_id']:
+        flash('Not found or access denied.', 'danger')
+        return redirect(url_for('teacher_dashboard'))
+
+    cursor.execute('SELECT COUNT(*) AS cnt FROM assignment_submissions WHERE assignment_id=%s', (aid,))
+    has_subs = cursor.fetchone()['cnt'] > 0
+
+    if has_subs:
+        cursor.execute("UPDATE assignments SET visibility='deleted' WHERE id=%s", (aid,))
+    else:
+        cursor.execute('DELETE FROM assignments WHERE id=%s', (aid,))
+    mysql.connection.commit()
+    flash('Assignment deleted.', 'success')
+    return redirect(url_for('teacher_dashboard'))
+
+
+@app.route('/teacher/assignment/<int:aid>/submissions')
+@login_required(role='instructor')
+def teacher_assignment_submissions(aid):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        '''SELECT a.*, c.instructor_id, c.id AS cid FROM assignments a
+           JOIN classrooms c ON a.classroom_id = c.id WHERE a.id=%s''',
+        (aid,)
+    )
+    assignment = cursor.fetchone()
+    if not assignment or assignment['instructor_id'] != session['user_id']:
+        flash('Not found or access denied.', 'danger')
+        return redirect(url_for('teacher_dashboard'))
+
+    filter_by = request.args.get('filter', 'all')
+    base_query = '''
+        SELECT s.*, u.full_name AS student_name,
+               COALESCE(s.teacher_grade, s.ai_grade) AS final_grade
+        FROM assignment_submissions s
+        JOIN users u ON s.student_id = u.id
+        WHERE s.assignment_id=%s
+    '''
+    if filter_by == 'graded':
+        base_query += ' AND (s.ai_grade IS NOT NULL OR s.teacher_grade IS NOT NULL)'
+    elif filter_by == 'ungraded':
+        base_query += ' AND s.ai_grade IS NULL AND s.teacher_grade IS NULL'
+    elif filter_by == 'locked':
+        base_query += ' AND s.locked=1'
+    base_query += ' ORDER BY s.submitted_at DESC'
+
+    cursor.execute(base_query, (aid,))
+    submissions = cursor.fetchall()
+
+    return render_template('teacher/assignment_submissions.html',
+                           assignment=assignment, submissions=submissions,
+                           filter_by=filter_by)
+
+
+@app.route('/teacher/assignment/<int:aid>/override/<int:sub_id>', methods=['POST'])
+@login_required(role='instructor')
+def teacher_override_submission(aid, sub_id):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        '''SELECT a.id, c.instructor_id FROM assignments a
+           JOIN classrooms c ON a.classroom_id = c.id WHERE a.id=%s''',
+        (aid,)
+    )
+    row = cursor.fetchone()
+    if not row or row['instructor_id'] != session['user_id']:
+        return jsonify({'ok': False, 'error': 'Unauthorised'}), 403
+
+    data     = request.get_json() or {}
+    grade    = data.get('grade')
+    feedback = sanitize_for_mysql(str(data.get('feedback', '')))
+
+    if grade is None:
+        return jsonify({'ok': False, 'error': 'grade required'}), 400
+
+    cursor.execute(
+        'UPDATE assignment_submissions SET teacher_grade=%s, ai_feedback=%s WHERE id=%s',
+        (int(grade), feedback, sub_id)
+    )
+    mysql.connection.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/teacher/course/<int:cid>/analytics')
+@login_required(role='instructor')
+def teacher_analytics(cid):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        'SELECT * FROM classrooms WHERE id=%s AND instructor_id=%s',
+        (cid, session['user_id'])
+    )
+    classroom = cursor.fetchone()
+    if not classroom:
+        flash('Classroom not found.', 'danger')
+        return redirect(url_for('teacher_dashboard'))
+
+    cursor.execute(
+        '''SELECT COALESCE(s.teacher_grade, s.ai_grade) AS final_grade, u.full_name,
+                  a.title AS assignment_title, s.submitted_at
+           FROM assignment_submissions s
+           JOIN assignments a ON s.assignment_id = a.id
+           JOIN users u ON s.student_id = u.id
+           WHERE a.classroom_id=%s AND (s.ai_grade IS NOT NULL OR s.teacher_grade IS NOT NULL)''',
+        (cid,)
+    )
+    graded = cursor.fetchall()
+
+    cursor.execute(
+        'SELECT COUNT(*) AS total FROM assignment_submissions s JOIN assignments a ON s.assignment_id=a.id WHERE a.classroom_id=%s',
+        (cid,)
+    )
+    total_subs = cursor.fetchone()['total']
+
+    cursor.execute('SELECT COUNT(*) AS total FROM classroom_members WHERE classroom_id=%s', (cid,))
+    total_members = cursor.fetchone()['total']
+
+    cursor.execute('SELECT COUNT(*) AS total FROM assignments WHERE classroom_id=%s', (cid,))
+    total_assignments = cursor.fetchone()['total']
+
+    scores = [r['final_grade'] for r in graded if r['final_grade'] is not None]
+    avg_score = round(sum(scores) / len(scores), 1) if scores else 0
+    completion_rate = round((total_subs / (total_members * total_assignments) * 100), 1) if total_members and total_assignments else 0
+
+    dist = {'90-100': 0, '80-89': 0, '70-79': 0, '60-69': 0, '0-59': 0}
+    for sc in scores:
+        if sc >= 90:   dist['90-100'] += 1
+        elif sc >= 80: dist['80-89']  += 1
+        elif sc >= 70: dist['70-79']  += 1
+        elif sc >= 60: dist['60-69']  += 1
+        else:          dist['0-59']   += 1
+
+    # Top performers: avg grade per student
+    from collections import defaultdict
+    student_scores = defaultdict(list)
+    student_names  = {}
+    for r in graded:
+        student_names[r['full_name']] = r['full_name']
+        student_scores[r['full_name']].append(r['final_grade'])
+    top_performers = sorted(
+        [{'name': n, 'avg': round(sum(v)/len(v), 1)} for n, v in student_scores.items()],
+        key=lambda x: x['avg'], reverse=True
+    )[:10]
+
+    return render_template('teacher/analytics.html',
+                           classroom=classroom, avg_score=avg_score,
+                           total_subs=total_subs, completion_rate=completion_rate,
+                           dist=dist, top_performers=top_performers)
+
+
+@app.route('/teacher/leaderboard')
+@login_required(role='instructor')
+def teacher_leaderboard():
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        '''SELECT u.full_name, c.name AS classroom_name,
+                  COUNT(s.id) AS completed,
+                  ROUND(AVG(COALESCE(s.teacher_grade, s.ai_grade)), 1) AS avg_score
+           FROM assignment_submissions s
+           JOIN users u ON s.student_id = u.id
+           JOIN assignments a ON s.assignment_id = a.id
+           JOIN classrooms c ON a.classroom_id = c.id
+           WHERE c.instructor_id=%s
+           GROUP BY s.student_id, a.classroom_id
+           ORDER BY avg_score DESC''',
+        (session['user_id'],)
+    )
+    rows = cursor.fetchall()
+    return render_template('teacher/teacher_leaderboard.html', rows=rows)
+
+
+# ─── STUDENT: ASSIGNMENT VIEWS ────────────────────────────────────────────
+
+@app.route('/student/assignment/<int:aid>')
+@login_required(role='student')
+def student_view_assignment(aid):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        '''SELECT a.*, c.name AS classroom_name, c.id AS classroom_id
+           FROM assignments a JOIN classrooms c ON a.classroom_id = c.id
+           WHERE a.id=%s AND a.visibility != 'draft' AND a.visibility != 'deleted' ''',
+        (aid,)
+    )
+    assignment = cursor.fetchone()
+    if not assignment:
+        flash('Assignment not found.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    cursor.execute(
+        'SELECT id FROM classroom_members WHERE classroom_id=%s AND user_id=%s',
+        (assignment['classroom_id'], session['user_id'])
+    )
+    if not cursor.fetchone():
+        flash('You are not enrolled in this classroom.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    cursor.execute(
+        'SELECT * FROM assignment_submissions WHERE assignment_id=%s AND student_id=%s',
+        (aid, session['user_id'])
+    )
+    submission = cursor.fetchone()
+
+    # Parse rubric
+    import json as _json
+    rubric = []
+    if assignment.get('rubric'):
+        try:
+            rubric = _json.loads(assignment['rubric'])
+        except Exception:
+            rubric = []
+
+    # Parse evaluation detail
+    eval_detail = {}
+    if submission and submission.get('evaluation_detail'):
+        try:
+            eval_detail = _json.loads(submission['evaluation_detail'])
+        except Exception:
+            eval_detail = {}
+
+    attempts_used = 1 if submission else 0
+    max_attempts  = assignment.get('max_attempts', 1)
+
+    return render_template('student/assignment.html',
+                           assignment=assignment, submission=submission,
+                           rubric=rubric, eval_detail=eval_detail,
+                           attempts_used=attempts_used, max_attempts=max_attempts)
+
+
+@app.route('/student/assignment/<int:aid>/submit', methods=['POST'])
+@login_required(role='student')
+def student_submit_assignment(aid):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        '''SELECT a.*, c.id AS classroom_id FROM assignments a
+           JOIN classrooms c ON a.classroom_id = c.id
+           WHERE a.id=%s AND a.visibility='published' ''',
+        (aid,)
+    )
+    assignment = cursor.fetchone()
+    if not assignment:
+        return jsonify({'ok': False, 'error': 'Assignment not found or not published'}), 404
+
+    classroom_id = assignment['classroom_id']
+    cursor.execute(
+        'SELECT id FROM classroom_members WHERE classroom_id=%s AND user_id=%s',
+        (classroom_id, session['user_id'])
+    )
+    if not cursor.fetchone():
+        return jsonify({'ok': False, 'error': 'Not enrolled'}), 403
+
+    cursor.execute(
+        'SELECT * FROM assignment_submissions WHERE assignment_id=%s AND student_id=%s',
+        (aid, session['user_id'])
+    )
+    existing = cursor.fetchone()
+    if existing and existing.get('locked'):
+        return jsonify({'ok': False, 'error': 'Submission is locked'}), 400
+    if existing:
+        return jsonify({'ok': False, 'error': 'Already submitted'}), 400
+
+    submitted_text = ''
+    filename       = None
+    file_path_str  = None
+
+    if 'submission_file' in request.files:
+        f = request.files['submission_file']
+        if f and f.filename and allowed_file(f.filename):
+            save_dir = Path(Config.UPLOAD_FOLDER) / 'submissions' / str(classroom_id) / str(session['user_id'])
+            save_dir.mkdir(parents=True, exist_ok=True)
+            orig        = secure_filename(f.filename)
+            unique_name = f'{uuid.uuid4().hex}_{orig}'
+            fpath       = save_dir / unique_name
+            f.save(str(fpath))
+            filename      = unique_name
+            file_path_str = str(fpath)
+    else:
+        data           = request.get_json() or {}
+        submitted_text = sanitize_for_mysql(data.get('text', '').strip())
+
+    if not filename and not submitted_text:
+        return jsonify({'ok': False, 'error': 'No submission content provided'}), 400
+
+    cursor.execute(
+        '''INSERT INTO assignment_submissions
+               (assignment_id, student_id, filename, file_path, submitted_text, locked)
+           VALUES (%s,%s,%s,%s,%s,1)''',
+        (aid, session['user_id'], filename, file_path_str, submitted_text)
+    )
+    sub_id = cursor.lastrowid
+    mysql.connection.commit()
+
+    import json as _json
+    rubric_str = sanitize_for_mysql(
+        f"Title: {assignment['title']}\nDescription: {assignment['description'] or ''}\n"
+        f"Max marks: {assignment['max_marks']}\nRubric: {assignment.get('rubric') or ''}"
+    )
+
+    def _grade():
+        try:
+            from ai_engine import evaluate_assignment
+            result   = evaluate_assignment(
+                submission_pdf=file_path_str or '',
+                rubric=rubric_str,
+                course_id=str(classroom_id),
+                student_id=str(session['user_id']),
+            )
+            score    = int(result.get('score', 0))
+            feedback = sanitize_for_mysql(str(result.get('feedback', '')))
+            detail   = sanitize_for_mysql(_json.dumps(result.get('breakdown', {})))
+
+            import MySQLdb as _db
+            from config import Config as C
+            conn = _db.connect(
+                host=C.MYSQL_HOST, user=C.MYSQL_USER, passwd=C.MYSQL_PASSWORD,
+                db=C.MYSQL_DB, charset='utf8mb4',
+                init_command="SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'"
+            )
+            c = conn.cursor()
+            c.execute(
+                'UPDATE assignment_submissions SET ai_grade=%s, ai_feedback=%s, evaluation_detail=%s WHERE id=%s',
+                (score, feedback, detail, sub_id)
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f'[Grade] student_submit_assignment grading failed: {e}')
+
+    import threading
+    threading.Thread(target=_grade, daemon=True).start()
+    return jsonify({'ok': True, 'sub_id': sub_id})
+
+
+@app.route('/student/grades')
+@login_required(role='student')
+def student_grades():
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        '''SELECT s.*, a.title AS assignment_title, a.max_marks,
+                  c.name AS classroom_name,
+                  COALESCE(s.teacher_grade, s.ai_grade) AS final_grade
+           FROM assignment_submissions s
+           JOIN assignments a ON s.assignment_id = a.id
+           JOIN classrooms c ON a.classroom_id = c.id
+           WHERE s.student_id=%s
+           ORDER BY s.submitted_at DESC''',
+        (session['user_id'],)
+    )
+    submissions = cursor.fetchall()
+    return render_template('student/grades.html', submissions=submissions)
+
+
+@app.route('/student/project/analyze', methods=['POST'])
+@login_required(role='student')
+def student_project_analyze():
+    data         = request.get_json() or {}
+    repo_url     = data.get('repo_url', '').strip()
+    classroom_id = data.get('classroom_id')
+    if not repo_url or not repo_url.startswith('http'):
+        return jsonify({'ok': False, 'error': 'Valid repo URL required'}), 400
+
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    if classroom_id:
+        cursor.execute(
+            'SELECT * FROM classrooms WHERE id=%s',
+            (classroom_id,)
+        )
+        classroom = cursor.fetchone()
+        project_details = classroom.get('description', '') if classroom else ''
+    else:
+        project_details = ''
+
+    def _analyze():
+        try:
+            from ai_engine import analyze_project_advisory
+            return analyze_project_advisory(repo_url=repo_url, project_details=project_details)
+        except Exception as e:
+            return {'error': str(e)}
+
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        future = ex.submit(_analyze)
+        result = future.result(timeout=120)
+
+    return jsonify({'ok': True, 'result': result})
+
+
+@app.route('/student/leaderboard')
+@login_required(role='student')
+def student_leaderboard():
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        '''SELECT s.student_id,
+                  u.full_name,
+                  ROUND(AVG(COALESCE(s.teacher_grade, s.ai_grade)), 1) AS avg_score,
+                  COUNT(s.id) AS completed,
+                  c.name AS classroom_name
+           FROM assignment_submissions s
+           JOIN users u ON s.student_id = u.id
+           JOIN assignments a ON s.assignment_id = a.id
+           JOIN classrooms c ON a.classroom_id = c.id
+           JOIN classroom_members cm ON cm.classroom_id = c.id AND cm.user_id = %s
+           WHERE (s.ai_grade IS NOT NULL OR s.teacher_grade IS NOT NULL)
+           GROUP BY s.student_id, a.classroom_id
+           ORDER BY avg_score DESC''',
+        (session['user_id'],)
+    )
+    rows      = cursor.fetchall()
+    my_id     = session['user_id']
+    my_name   = session.get('full_name', '')
+    # Anonymize
+    counter   = 1
+    for r in rows:
+        if r['student_id'] == my_id:
+            r['display_name'] = my_name
+            r['is_me']        = True
+        else:
+            r['display_name'] = f'Student {counter:03d}'
+            r['is_me']        = False
+            counter           += 1
+    return render_template('student/student_leaderboard.html', rows=rows, my_id=my_id)
+
+
+@app.route('/student/project/analysis')
+@login_required(role='student')
+def student_project_analysis_page():
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        '''SELECT c.id, c.name FROM classrooms c
+           JOIN classroom_members cm ON c.id = cm.classroom_id
+           WHERE cm.user_id=%s ORDER BY c.name''',
+        (session['user_id'],)
+    )
+    classrooms = cursor.fetchall()
+    return render_template('student/project_analysis.html', classrooms=classrooms)
+
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

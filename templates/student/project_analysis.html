@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block title %}Project Analysis — NeuroClass{% endblock %}
+{% block extra_head %}
+<style>
+.progress-bar-outer{background:var(--color-divider);border-radius:var(--radius-full);height:18px;overflow:hidden;margin:var(--space-2) 0}
+.progress-bar-inner{height:100%;border-radius:var(--radius-full);background:var(--color-primary);transition:width 0.8s ease}
+.result-section{background:var(--color-surface-offset);border-radius:var(--radius-lg);padding:var(--space-4);margin-bottom:var(--space-3)}
+</style>
+{% endblock %}
+{% block content %}
+<div style="max-width:720px;margin:var(--space-8) auto;padding:0 var(--space-4)">
+  <a href="{{ url_for('student_dashboard') }}" class="btn btn-ghost btn-sm" style="margin-bottom:var(--space-4)">← Back to Dashboard</a>
+  <h1 style="font-size:var(--text-xl);margin-bottom:var(--space-2)">🔍 Project Analysis</h1>
+  <p style="color:var(--color-text-muted);margin-bottom:var(--space-6)">Get advisory feedback on your GitHub repository. This does <strong>not</strong> submit or lock your work.</p>
+
+  <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);padding:var(--space-6);margin-bottom:var(--space-6)">
+    <div class="form-group" style="margin-bottom:var(--space-4)">
+      <label class="form-label">GitHub Repository URL *</label>
+      <input type="url" id="repo_url" class="form-input" placeholder="https://github.com/user/repo" required>
+    </div>
+    <div class="form-group" style="margin-bottom:var(--space-5)">
+      <label class="form-label">Classroom (optional)</label>
+      <select id="classroom_id" class="form-select">
+        <option value="">— Select classroom —</option>
+        {% for c in classrooms %}
+        <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-primary" id="analyze-btn" onclick="runAnalysis()">Analyze Repository</button>
+  </div>
+
+  <div id="result-card" style="display:none;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);padding:var(--space-6)">
+    <h2 style="font-size:var(--text-lg);margin-bottom:var(--space-5)">Analysis Results</h2>
+
+    <div id="res-completion" class="result-section" style="display:none">
+      <div style="display:flex;justify-content:space-between;margin-bottom:var(--space-1)">
+        <span style="font-weight:600">Completion</span>
+        <span id="completion-pct" style="font-weight:700;color:var(--color-primary)">0%</span>
+      </div>
+      <div class="progress-bar-outer"><div class="progress-bar-inner" id="progress-bar" style="width:0%"></div></div>
+    </div>
+
+    <div id="res-status" class="result-section" style="display:none">
+      <h3 style="font-size:var(--text-sm);font-weight:600;margin-bottom:var(--space-2)">Status</h3>
+      <p id="status-text" style="font-size:var(--text-sm)"></p>
+    </div>
+
+    <div id="res-done-well" class="result-section" style="display:none">
+      <h3 style="font-size:var(--text-sm);font-weight:600;margin-bottom:var(--space-2)">✅ What's Done Well</h3>
+      <p id="done-well-text" style="font-size:var(--text-sm);white-space:pre-wrap"></p>
+    </div>
+
+    <div id="res-missing" class="result-section" style="display:none">
+      <h3 style="font-size:var(--text-sm);font-weight:600;margin-bottom:var(--space-2)">⚠️ What's Missing</h3>
+      <p id="missing-text" style="font-size:var(--text-sm);white-space:pre-wrap"></p>
+    </div>
+
+    <div id="res-next" class="result-section" style="display:none">
+      <h3 style="font-size:var(--text-sm);font-weight:600;margin-bottom:var(--space-2)">🔜 Next Steps</h3>
+      <p id="next-text" style="font-size:var(--text-sm);white-space:pre-wrap"></p>
+    </div>
+
+    <div id="res-grade" style="display:none;margin-top:var(--space-3)">
+      <span style="color:var(--color-text-muted);font-size:var(--text-sm)">Estimated Grade: </span>
+      <span id="est-grade" style="font-size:var(--text-lg);font-weight:700;color:var(--color-primary)"></span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+async function runAnalysis() {
+  const url = document.getElementById('repo_url').value.trim();
+  const cid = document.getElementById('classroom_id').value;
+  if (!url) { alert('Enter a GitHub URL.'); return; }
+
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true; btn.textContent = 'Analyzing…';
+
+  const res  = await fetch('{{ url_for("student_project_analyze") }}', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({repo_url: url, classroom_id: cid || null})
+  });
+  const data = await res.json();
+  btn.disabled = false; btn.textContent = 'Analyze Repository';
+
+  if (!data.ok) { alert('Error: ' + (data.error || 'Unknown error')); return; }
+
+  const r = data.result || {};
+  document.getElementById('result-card').style.display = 'block';
+
+  const pct = r.completion_percentage || r.completion || 0;
+  if (pct) {
+    document.getElementById('res-completion').style.display = 'block';
+    document.getElementById('completion-pct').textContent = pct + '%';
+    document.getElementById('progress-bar').style.width = pct + '%';
+  }
+  showSection('res-status',   'status-text',     r.status || r.summary);
+  showSection('res-done-well','done-well-text',   r.done_well || r.strengths);
+  showSection('res-missing',  'missing-text',     r.missing || r.weaknesses);
+  showSection('res-next',     'next-text',        r.next_steps || r.recommendations);
+  if (r.estimated_grade || r.grade) {
+    document.getElementById('res-grade').style.display = 'block';
+    document.getElementById('est-grade').textContent = r.estimated_grade || r.grade;
+  }
+}
+
+function showSection(secId, textId, val) {
+  if (val) {
+    document.getElementById(secId).style.display = 'block';
+    document.getElementById(textId).textContent = val;
+  }
+}
+</script>
+{% endblock %}

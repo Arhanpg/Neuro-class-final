@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}Leaderboard — {{ classroom.name }}{% endblock %}
+{% block content %}
+<div class="container" style="max-width:900px;margin:var(--space-8) auto;padding:0 var(--space-4)">
+  <div style="margin-bottom:var(--space-6)">
+    <a href="{{ url_for('view_classroom', classroom_id=classroom_id) }}" class="btn btn-ghost btn-sm">← Back to Classroom</a>
+    <h1 style="margin-top:var(--space-4);font-size:var(--text-xl)">🏆 Leaderboard — {{ classroom.name }}</h1>
+  </div>
+
+  <div class="card" style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);padding:var(--space-6);margin-bottom:var(--space-6)">
+    <h2 style="font-size:var(--text-lg);margin-bottom:var(--space-4)">Assignment Leaderboard</h2>
+    {% if assignment_lb %}
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:var(--text-sm)">
+        <thead>
+          <tr style="border-bottom:2px solid var(--color-border)">
+            <th style="text-align:left;padding:var(--space-2) var(--space-3)">#</th>
+            <th style="text-align:left;padding:var(--space-2) var(--space-3)">Student</th>
+            <th style="text-align:left;padding:var(--space-2) var(--space-3)">Assignment</th>
+            <th style="text-align:center;padding:var(--space-2) var(--space-3)">Score</th>
+            <th style="text-align:center;padding:var(--space-2) var(--space-3)">Max</th>
+            <th style="text-align:left;padding:var(--space-2) var(--space-3)">Submitted</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in assignment_lb %}
+          <tr style="border-bottom:1px solid var(--color-divider)">
+            <td style="padding:var(--space-2) var(--space-3);color:var(--color-text-muted)">{{ loop.index }}</td>
+            <td style="padding:var(--space-2) var(--space-3);font-weight:500">{{ row.student_name }}</td>
+            <td style="padding:var(--space-2) var(--space-3)">{{ row.assignment_title }}</td>
+            <td style="padding:var(--space-2) var(--space-3);text-align:center;font-weight:700;color:{% if row.final_grade and row.final_grade >= 90 %}var(--color-success){% elif row.final_grade and row.final_grade >= 70 %}var(--color-warning){% else %}var(--color-error){% endif %}">
+              {{ row.final_grade if row.final_grade is not none else '—' }}
+            </td>
+            <td style="padding:var(--space-2) var(--space-3);text-align:center">{{ row.max_marks }}</td>
+            <td style="padding:var(--space-2) var(--space-3);color:var(--color-text-muted);font-size:var(--text-xs)">{{ row.submitted_at.strftime('%b %d, %Y') if row.submitted_at else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p style="color:var(--color-text-muted)">No assignment submissions yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card" style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);padding:var(--space-6)">
+    <h2 style="font-size:var(--text-lg);margin-bottom:var(--space-4)">Project Leaderboard</h2>
+    {% if project_lb %}
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:var(--text-sm)">
+        <thead>
+          <tr style="border-bottom:2px solid var(--color-border)">
+            <th style="text-align:left;padding:var(--space-2) var(--space-3)">#</th>
+            <th style="text-align:left;padding:var(--space-2) var(--space-3)">Student</th>
+            <th style="text-align:left;padding:var(--space-2) var(--space-3)">Project</th>
+            <th style="text-align:center;padding:var(--space-2) var(--space-3)">Score</th>
+            <th style="text-align:center;padding:var(--space-2) var(--space-3)">Max</th>
+            <th style="text-align:left;padding:var(--space-2) var(--space-3)">Submitted</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in project_lb %}
+          <tr style="border-bottom:1px solid var(--color-divider)">
+            <td style="padding:var(--space-2) var(--space-3);color:var(--color-text-muted)">{{ loop.index }}</td>
+            <td style="padding:var(--space-2) var(--space-3);font-weight:500">{{ row.student_name }}</td>
+            <td style="padding:var(--space-2) var(--space-3)">{{ row.project_title }}</td>
+            <td style="padding:var(--space-2) var(--space-3);text-align:center;font-weight:700;color:{% if row.final_grade and row.final_grade >= 90 %}var(--color-success){% elif row.final_grade and row.final_grade >= 70 %}var(--color-warning){% else %}var(--color-error){% endif %}">
+              {{ row.final_grade if row.final_grade is not none else '—' }}
+            </td>
+            <td style="padding:var(--space-2) var(--space-3);text-align:center">{{ row.max_marks }}</td>
+            <td style="padding:var(--space-2) var(--space-3);color:var(--color-text-muted);font-size:var(--text-xs)">{{ row.submitted_at.strftime('%b %d, %Y') if row.submitted_at else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p style="color:var(--color-text-muted)">No project submissions yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

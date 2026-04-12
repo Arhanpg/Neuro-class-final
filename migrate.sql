@@ -97,4 +97,102 @@ CREATE TABLE IF NOT EXISTS project_submissions (
     FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- assignments: add rubric column
+SET @dbname = DATABASE();
+SET @exists = (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'assignments' AND COLUMN_NAME = 'rubric'
+);
+SET @query = IF(@exists = 0,
+    'ALTER TABLE assignments ADD COLUMN rubric TEXT',
+    'SELECT "rubric already exists" AS info'
+);
+PREPARE stmt FROM @query;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- assignments: add visibility column
+SET @dbname = DATABASE();
+SET @exists = (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'assignments' AND COLUMN_NAME = 'visibility'
+);
+SET @query = IF(@exists = 0,
+    'ALTER TABLE assignments ADD COLUMN visibility ENUM(''draft'',''published'',''closed'') DEFAULT ''published''',
+    'SELECT "visibility already exists" AS info'
+);
+PREPARE stmt FROM @query;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- assignments: add max_attempts column
+SET @dbname = DATABASE();
+SET @exists = (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'assignments' AND COLUMN_NAME = 'max_attempts'
+);
+SET @query = IF(@exists = 0,
+    'ALTER TABLE assignments ADD COLUMN max_attempts INT DEFAULT 1',
+    'SELECT "max_attempts already exists" AS info'
+);
+PREPARE stmt FROM @query;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- assignment_submissions: add locked column
+SET @dbname = DATABASE();
+SET @exists = (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'assignment_submissions' AND COLUMN_NAME = 'locked'
+);
+SET @query = IF(@exists = 0,
+    'ALTER TABLE assignment_submissions ADD COLUMN locked TINYINT(1) DEFAULT 0',
+    'SELECT "locked already exists" AS info'
+);
+PREPARE stmt FROM @query;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- assignment_submissions: add evaluation_detail column
+SET @dbname = DATABASE();
+SET @exists = (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'assignment_submissions' AND COLUMN_NAME = 'evaluation_detail'
+);
+SET @query = IF(@exists = 0,
+    'ALTER TABLE assignment_submissions ADD COLUMN evaluation_detail MEDIUMTEXT',
+    'SELECT "evaluation_detail already exists" AS info'
+);
+PREPARE stmt FROM @query;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- project_submissions: add locked column
+SET @dbname = DATABASE();
+SET @exists = (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'project_submissions' AND COLUMN_NAME = 'locked'
+);
+SET @query = IF(@exists = 0,
+    'ALTER TABLE project_submissions ADD COLUMN locked TINYINT(1) DEFAULT 0',
+    'SELECT "locked already exists" AS info'
+);
+PREPARE stmt FROM @query;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- project_submissions: add rejected column
+SET @dbname = DATABASE();
+SET @exists = (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'project_submissions' AND COLUMN_NAME = 'rejected'
+);
+SET @query = IF(@exists = 0,
+    'ALTER TABLE project_submissions ADD COLUMN rejected TINYINT(1) DEFAULT 0',
+    'SELECT "rejected already exists" AS info'
+);
+PREPARE stmt FROM @query;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 SELECT 'Migration complete! All tables are up to date.' AS status;
