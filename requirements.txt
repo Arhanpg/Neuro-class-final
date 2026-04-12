@@ -2,3 +2,15 @@ flask>=3.0.0
 flask-mysqldb>=2.0.0
 mysqlclient>=2.2.0
 Werkzeug>=3.0.0
+python-dotenv
+# AI / RAG dependencies
+langchain
+langchain-core
+langchain-community
+langchain-google-genai
+langchain-openai
+langchain-groq
+langgraph
+faiss-cpu
+pypdf
+sentence-transformers
