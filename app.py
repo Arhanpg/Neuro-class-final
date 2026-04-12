@@ -8,7 +8,7 @@ from datetime import datetime
 
 from flask import (
     Flask, render_template, request, redirect,
-    url_for, session, flash, jsonify
+    url_for, session, flash, jsonify, abort
 )
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
@@ -171,7 +171,6 @@ def teacher_dashboard():
             (c['id'],)
         )
         c['student_count'] = cursor.fetchone()['cnt']
-        # Attach live training status
         from ai_engine import get_training_status, is_indexed
         c['training_status'] = get_training_status(c['id'])
         c['is_indexed'] = bool(c.get('rag_indexed')) or is_indexed(c['id'])
@@ -311,13 +310,14 @@ def view_classroom(classroom_id):
     )
     materials = cursor.fetchall()
 
+    # ── FIX: Only load THIS user's chat history ──────────────────────────────
     cursor.execute(
         '''SELECT ch.role, ch.message, ch.created_at, u.full_name
            FROM chat_history ch
            JOIN users u ON ch.user_id = u.id
-           WHERE ch.classroom_id = %s
-           ORDER BY ch.created_at ASC LIMIT 50''',
-        (classroom_id,)
+           WHERE ch.classroom_id = %s AND ch.user_id = %s
+           ORDER BY ch.created_at ASC LIMIT 100''',
+        (classroom_id, session['user_id'])
     )
     chat_history = cursor.fetchall()
 
@@ -395,7 +395,6 @@ def upload_lectures(classroom_id):
 def delete_lecture(classroom_id, material_id):
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
 
-    # Verify instructor owns this classroom
     cursor.execute(
         'SELECT id FROM classrooms WHERE id=%s AND instructor_id=%s',
         (classroom_id, session['user_id'])
@@ -403,7 +402,6 @@ def delete_lecture(classroom_id, material_id):
     if not cursor.fetchone():
         return jsonify({'ok': False, 'error': 'Unauthorised'}), 403
 
-    # Get file info before deleting
     cursor.execute(
         'SELECT * FROM lecture_materials WHERE id=%s AND classroom_id=%s',
         (material_id, classroom_id)
@@ -412,7 +410,6 @@ def delete_lecture(classroom_id, material_id):
     if not material:
         return jsonify({'ok': False, 'error': 'File not found'}), 404
 
-    # Delete from filesystem
     try:
         file_path = Path(material['file_path'])
         if file_path.exists():
@@ -420,11 +417,9 @@ def delete_lecture(classroom_id, material_id):
     except Exception as e:
         print(f'[Delete] Could not remove file: {e}')
 
-    # Delete from DB
     cursor.execute('DELETE FROM lecture_materials WHERE id=%s', (material_id,))
     mysql.connection.commit()
 
-    # If no more files, reset rag_indexed
     cursor.execute(
         'SELECT COUNT(*) AS cnt FROM lecture_materials WHERE classroom_id=%s',
         (classroom_id,)
@@ -435,7 +430,6 @@ def delete_lecture(classroom_id, material_id):
             'UPDATE classrooms SET rag_indexed=0 WHERE id=%s', (classroom_id,)
         )
         mysql.connection.commit()
-        # Clear in-memory vector store if any
         from ai_engine import _vector_stores
         _vector_stores.pop(classroom_id, None)
 
@@ -465,15 +459,13 @@ def train_ai(classroom_id):
 
 @app.route('/classroom/<int:classroom_id>/train_status')
 def train_status(classroom_id):
-    """Polled by the frontend every 3s while training is running."""
     if 'user_id' not in session:
         return jsonify({'error': 'Not logged in'}), 401
 
     from ai_engine import get_training_status, is_indexed
-    status = get_training_status(classroom_id)
+    status  = get_training_status(classroom_id)
     indexed = is_indexed(classroom_id)
 
-    # If done, update DB
     if status == 'done' or indexed:
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute(
@@ -485,9 +477,9 @@ def train_status(classroom_id):
         'status': status,
         'indexed': indexed,
         'label': {
-            'idle': 'Not trained',
+            'idle':    'Not trained',
             'running': '⏳ Training in background…',
-            'done': '✅ Trained on your notes',
+            'done':    '✅ Trained on your notes',
         }.get(status, '⚠️ Error — try re-training')
     })
 
@@ -518,6 +510,7 @@ def classroom_chat(classroom_id):
     if not question:
         return jsonify({'error': 'Message cannot be empty'}), 400
 
+    # Store user message — tagged with user_id for isolation
     cursor.execute(
         'INSERT INTO chat_history (classroom_id, user_id, role, message) VALUES (%s,%s,%s,%s)',
         (classroom_id, session['user_id'], 'user', question)
@@ -528,6 +521,7 @@ def classroom_chat(classroom_id):
     from ai_engine import rag_query
     answer = rag_query(classroom_id, question, context_data)
 
+    # Store assistant reply — also tagged with this user's id
     cursor.execute(
         'INSERT INTO chat_history (classroom_id, user_id, role, message) VALUES (%s,%s,%s,%s)',
         (classroom_id, session['user_id'], 'assistant', answer)
@@ -537,15 +531,61 @@ def classroom_chat(classroom_id):
     return jsonify({'answer': answer})
 
 
-# ─── SERVE FILES ────────────────────────────────────────────────────────────
+# ─── SERVE LECTURE FILES ────────────────────────────────────────────────────
+# Handles both PDF (inline viewer) and other doc types (download)
 
-@app.route('/uploads/lectures/<int:classroom_id>/<filename>')
+@app.route('/uploads/lectures/<int:classroom_id>/<path:filename>')
 def serve_lecture(classroom_id, filename):
+    """Serve a lecture file.
+    PDFs: served inline so the browser renders them directly.
+    Other types: served as attachment (download).
+    Access control: must be logged in AND either the instructor OR an enrolled student.
+    """
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    from flask import send_from_directory
+
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+    # Verify the file belongs to this classroom
+    cursor.execute(
+        'SELECT * FROM lecture_materials WHERE classroom_id=%s AND filename=%s',
+        (classroom_id, filename)
+    )
+    material = cursor.fetchone()
+    if not material:
+        abort(404)
+
+    # Verify access rights
+    cursor.execute('SELECT instructor_id FROM classrooms WHERE id=%s', (classroom_id,))
+    classroom = cursor.fetchone()
+    if not classroom:
+        abort(404)
+
+    if session['role'] == 'instructor':
+        if classroom['instructor_id'] != session['user_id']:
+            abort(403)
+    else:
+        cursor.execute(
+            'SELECT id FROM classroom_members WHERE classroom_id=%s AND user_id=%s',
+            (classroom_id, session['user_id'])
+        )
+        if not cursor.fetchone():
+            abort(403)
+
+    from flask import send_from_directory, make_response
     folder = os.path.join(Config.LECTURES_BASE_DIR, str(classroom_id))
-    return send_from_directory(folder, filename)
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+
+    if ext == 'pdf':
+        # Inline — browser opens its built-in PDF viewer
+        response = make_response(send_from_directory(folder, filename))
+        response.headers['Content-Disposition'] = f'inline; filename="{material["original_name"]}"'
+        response.headers['Content-Type'] = 'application/pdf'
+        return response
+    else:
+        # Force download for doc/docx/txt
+        return send_from_directory(folder, filename, as_attachment=True,
+                                   download_name=material['original_name'])
 
 
 # ─── API HELPERS ────────────────────────────────────────────────────────────

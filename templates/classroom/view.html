@@ -3,6 +3,7 @@
 
 {% block extra_head %}
 <style>
+/* ── Chat ─────────────────────────────────────────────────────────────────── */
 .chat-window { display:flex; flex-direction:column; height:480px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-lg); overflow:hidden; }
 .chat-messages { flex:1; overflow-y:auto; padding:var(--space-4); display:flex; flex-direction:column; gap:var(--space-3); }
 .chat-bubble { max-width:80%; padding:var(--space-3) var(--space-4); border-radius:var(--radius-lg); font-size:var(--text-sm); line-height:1.6; }
@@ -18,18 +19,42 @@
 .typing-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--color-text-muted); margin:0 2px; animation:bounce 1.2s infinite; }
 .typing-dot:nth-child(2){animation-delay:.2s} .typing-dot:nth-child(3){animation-delay:.4s}
 @keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
+
+/* ── Training ──────────────────────────────────────────────────────────────── */
 .train-btn .spinner { width:16px; height:16px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; display:none; }
 @keyframes spin{to{transform:rotate(360deg)}}
+.training-banner { display:flex; align-items:center; gap:var(--space-2); padding:var(--space-3) var(--space-4); background:var(--color-warning-highlight); border-radius:var(--radius-md); color:var(--color-warning); font-size:var(--text-sm); font-weight:500; }
+.training-banner .pulse { width:10px; height:10px; border-radius:50%; background:var(--color-warning); animation:pulse 1s ease-in-out infinite; flex-shrink:0; }
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
+
+/* ── Materials ─────────────────────────────────────────────────────────────── */
 .material-item { display:flex; align-items:center; gap:var(--space-3); padding:var(--space-3) var(--space-4); border-bottom:1px solid var(--color-border); }
 .material-item:last-child { border-bottom:none; }
 .material-icon { font-size:1.4rem; flex-shrink:0; }
 .material-info { flex:1; min-width:0; }
 .material-name { font-weight:500; font-size:var(--text-sm); word-break:break-word; }
+.material-actions { display:flex; align-items:center; gap:var(--space-2); flex-shrink:0; }
+.view-btn { display:inline-flex; align-items:center; gap:4px; padding:var(--space-1) var(--space-3); border-radius:var(--radius-sm); background:var(--color-primary-highlight); color:var(--color-primary); font-size:var(--text-xs); font-weight:600; text-decoration:none; transition:background var(--transition-interactive), color var(--transition-interactive); }
+.view-btn:hover { background:var(--color-primary); color:#fff; }
 .delete-btn { background:none; border:none; cursor:pointer; color:var(--color-text-faint); font-size:1rem; padding:var(--space-1) var(--space-2); border-radius:var(--radius-sm); transition:color var(--transition-interactive), background var(--transition-interactive); flex-shrink:0; }
 .delete-btn:hover { color:var(--color-error); background:var(--color-error-highlight); }
-.training-banner { display:flex; align-items:center; gap:var(--space-2); padding:var(--space-3) var(--space-4); background:var(--color-warning-highlight); border-radius:var(--radius-md); color:var(--color-warning); font-size:var(--text-sm); font-weight:500; }
-.training-banner .pulse { width:10px; height:10px; border-radius:50%; background:var(--color-warning); animation:pulse 1s ease-in-out infinite; flex-shrink:0; }
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
+
+/* ── PDF Modal ─────────────────────────────────────────────────────────────── */
+.pdf-modal-overlay { display:none; position:fixed; inset:0; z-index:2000; background:oklch(0 0 0 / 0.7); align-items:center; justify-content:center; padding:var(--space-4); }
+.pdf-modal-overlay.open { display:flex; }
+.pdf-modal { background:var(--color-surface); border-radius:var(--radius-xl); overflow:hidden; width:100%; max-width:900px; max-height:92vh; display:flex; flex-direction:column; box-shadow:var(--shadow-lg); }
+.pdf-modal-header { display:flex; align-items:center; justify-content:space-between; padding:var(--space-4) var(--space-5); border-bottom:1px solid var(--color-border); flex-shrink:0; }
+.pdf-modal-title { font-weight:600; font-size:var(--text-sm); color:var(--color-text); }
+.pdf-modal-close { background:none; border:none; cursor:pointer; color:var(--color-text-muted); font-size:1.4rem; line-height:1; padding:var(--space-1); border-radius:var(--radius-sm); transition:color var(--transition-interactive); }
+.pdf-modal-close:hover { color:var(--color-text); }
+.pdf-modal-toolbar { display:flex; align-items:center; gap:var(--space-3); padding:var(--space-2) var(--space-5); border-bottom:1px solid var(--color-border); background:var(--color-surface-offset); flex-shrink:0; flex-wrap:wrap; }
+.pdf-modal-toolbar .tool-btn { padding:var(--space-1) var(--space-3); border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text); font-size:var(--text-xs); cursor:pointer; transition:background var(--transition-interactive); }
+.pdf-modal-toolbar .tool-btn:hover { background:var(--color-surface-dynamic); }
+.pdf-modal-toolbar .page-info { font-size:var(--text-xs); color:var(--color-text-muted); margin-left:auto; }
+.pdf-embed-wrap { flex:1; overflow:hidden; position:relative; }
+.pdf-embed-wrap iframe { width:100%; height:100%; border:none; display:block; }
+.pdf-fallback { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--space-4); padding:var(--space-12); color:var(--color-text-muted); text-align:center; }
+.pdf-fallback p { font-size:var(--text-sm); max-width:40ch; }
 </style>
 {% endblock %}
 
@@ -53,8 +78,8 @@
   <div class="classroom-layout">
     <div class="classroom-main">
 
-      <!-- Training status banner (shown while training runs) -->
-      <div id="trainingBanner" class="training-banner" style="{% if training_status != 'running' %}display:none{% endif %}margin-bottom:var(--space-4)">
+      <!-- Training status banner -->
+      <div id="trainingBanner" class="training-banner" style="{% if training_status != 'running' %}display:none;{% endif %}margin-bottom:var(--space-4)">
         <div class="pulse"></div>
         <span id="trainingBannerText">⏳ AI is training in the background — you can keep using the app!</span>
       </div>
@@ -62,7 +87,11 @@
       <!-- AI Chatbot -->
       <div class="card">
         <div class="card-header">
-          <h2>🤖 AI Assistant</h2>
+          <h2>🤖 AI Assistant
+            <small style="font-size:var(--text-xs);font-weight:400;color:var(--color-text-muted);margin-left:var(--space-2)">
+              (private — only you see this conversation)
+            </small>
+          </h2>
           <span id="trainingBadge" class="badge {% if indexed %}badge-success{% elif training_status == 'running' %}badge-warning{% else %}badge-warning{% endif %}">
             {% if indexed %}✅ Trained on your notes
             {% elif training_status == 'running' %}⏳ Training in background…
@@ -74,7 +103,7 @@
             {% for msg in chat_history %}
             <div class="chat-bubble {{ msg.role }}">
               {{ msg.message }}
-              <div class="bubble-meta">{{ msg.full_name }} · {{ msg.created_at.strftime('%H:%M') if msg.created_at }}</div>
+              <div class="bubble-meta">{{ 'You' if msg.role == 'user' else '🤖 AI Assistant' }} · {{ msg.created_at.strftime('%H:%M') if msg.created_at }}</div>
             </div>
             {% endfor %}
             {% if not chat_history %}
@@ -85,7 +114,11 @@
               {% elif training_status == 'running' %}
               I'm currently being trained on the course materials — I'll be ready shortly! You can still ask general questions.
               {% else %}
+              {% if session.role == 'instructor' %}
+              Upload lecture notes and click <strong>Train AI Now</strong> to teach me your course content.
+              {% else %}
               The instructor hasn't trained me on course materials yet, but I can answer general questions!
+              {% endif %}
               {% endif %}
             </div>
             {% endif %}
@@ -100,7 +133,7 @@
           <a href="{{ url_for('upload_lectures', classroom_id=classroom.id) }}" class="btn btn-secondary btn-sm">📤 Upload Lectures</a>
           <button class="btn btn-primary btn-sm train-btn" id="trainBtn" onclick="trainAI({{ classroom.id }})" {% if training_status == 'running' %}disabled{% endif %}>
             <span class="spinner" id="trainSpinner" {% if training_status == 'running' %}style="display:inline-block"{% endif %}></span>
-            {% if training_status == 'running' %}⏳ Training…{% elif indexed %}🔄 Re-Train AI{% else %}🧠 Train AI Now{% endif %}
+            <span id="trainBtnLabel">{% if training_status == 'running' %}⏳ Training…{% elif indexed %}🔄 Re-Train AI{% else %}🧠 Train AI Now{% endif %}</span>
           </button>
         </div>
         {% endif %}
@@ -118,17 +151,32 @@
         <div class="materials-list" id="materialsList">
           {% for m in materials %}
           <div class="material-item" id="mat-{{ m.id }}">
-            <span class="material-icon">📄</span>
+            <span class="material-icon">{% if m.original_name.endswith('.pdf') %}📕{% elif m.original_name.endswith('.txt') %}📝{% else %}📄{% endif %}</span>
             <div class="material-info">
-              <span class="material-name">{{ m.original_name }}</span>
-              <span class="text-muted" style="font-size:var(--text-xs)">{{ m.uploaded_at.strftime('%b %d, %Y') if m.uploaded_at }}</span>
+              <div class="material-name">{{ m.original_name }}</div>
+              <div class="text-muted" style="font-size:var(--text-xs)">{{ m.uploaded_at.strftime('%b %d, %Y') if m.uploaded_at }}</div>
             </div>
-            {% if session.role == 'instructor' %}
-            <button class="delete-btn" title="Delete this file"
-              onclick="deleteLecture({{ classroom.id }}, {{ m.id }}, '{{ m.original_name|replace("'", "\\'")|replace('"', '\\"') }}')">
-              🗑
-            </button>
-            {% endif %}
+            <div class="material-actions">
+              {% if m.original_name.endswith('.pdf') %}
+              <!-- PDF: open inline viewer modal -->
+              <button class="view-btn"
+                onclick="openPdfModal('{{ url_for('serve_lecture', classroom_id=classroom.id, filename=m.filename) }}', '{{ m.original_name|replace("'", "\\'") }}')"
+                title="View PDF">
+                👁 View
+              </button>
+              {% else %}
+              <!-- Other files: download -->
+              <a class="view-btn" href="{{ url_for('serve_lecture', classroom_id=classroom.id, filename=m.filename) }}" download title="Download file">
+                ⬇ Download
+              </a>
+              {% endif %}
+              {% if session.role == 'instructor' %}
+              <button class="delete-btn" title="Delete this file"
+                onclick="deleteLecture({{ classroom.id }}, {{ m.id }}, '{{ m.original_name|replace("'", "\\'")|replace('"', '\\"') }}')">
+                🗑
+              </button>
+              {% endif %}
+            </div>
           </div>
           {% endfor %}
         </div>
@@ -178,10 +226,30 @@
   </div>
 </div>
 
+<!-- PDF Viewer Modal -->
+<div class="pdf-modal-overlay" id="pdfModal" onclick="closePdfModalOnOverlay(event)" role="dialog" aria-modal="true" aria-labelledby="pdfModalTitle">
+  <div class="pdf-modal">
+    <div class="pdf-modal-header">
+      <span class="pdf-modal-title" id="pdfModalTitle">Loading…</span>
+      <button class="pdf-modal-close" onclick="closePdfModal()" aria-label="Close viewer">✕</button>
+    </div>
+    <div class="pdf-modal-toolbar">
+      <a id="pdfDownloadBtn" href="#" class="tool-btn" download>⬇ Download</a>
+      <a id="pdfOpenTabBtn" href="#" target="_blank" rel="noopener noreferrer" class="tool-btn">↗ Open in new tab</a>
+      <span class="page-info" id="pdfPageInfo"></span>
+    </div>
+    <div class="pdf-embed-wrap" id="pdfEmbedWrap">
+      <!-- iframe inserted by JS -->
+    </div>
+  </div>
+</div>
+
 <script>
 const CLASSROOM_ID = {{ classroom.id }};
 let trainingPoller = null;
 let isTraining = {{ 'true' if training_status == 'running' else 'false' }};
+
+// ── Chat ─────────────────────────────────────────────────────────────────────
 
 function scrollToBottom() {
   const msgs = document.getElementById('chatMessages');
@@ -241,26 +309,25 @@ async function sendMessage() {
   }
 }
 
-// ── Training ──────────────────────────────────────────────────────────────
+// ── Training ──────────────────────────────────────────────────────────────────
 
-function setBannerVisible(visible) {
-  document.getElementById('trainingBanner').style.display = visible ? 'flex' : 'none';
+function setBannerVisible(v) {
+  document.getElementById('trainingBanner').style.display = v ? 'flex' : 'none';
 }
 
 function setBadgeText(text, cls) {
-  const badge = document.getElementById('trainingBadge');
-  badge.textContent = text;
-  badge.className = 'badge ' + cls;
+  const b = document.getElementById('trainingBadge');
+  b.textContent = text;
+  b.className = 'badge ' + cls;
 }
 
 function startPolling() {
   if (trainingPoller) return;
   trainingPoller = setInterval(async () => {
     try {
-      const res  = await fetch(`/classroom/${CLASSROOM_ID}/train_status`);
-      const data = await res.json();
+      const data = await (await fetch(`/classroom/${CLASSROOM_ID}/train_status`)).json();
       updateTrainingUI(data);
-    } catch(e) { /* ignore network hiccup */ }
+    } catch(e) {}
   }, 3000);
 }
 
@@ -271,22 +338,22 @@ function stopPolling() {
 function updateTrainingUI(data) {
   const btn     = document.getElementById('trainBtn');
   const spinner = document.getElementById('trainSpinner');
-  const banner  = document.getElementById('trainingBanner');
-  const bannerText = document.getElementById('trainingBannerText');
+  const label   = document.getElementById('trainBtnLabel');
+  if (!btn) return; // student view has no trainBtn
 
   if (data.status === 'running') {
     setBannerVisible(true);
     setBadgeText('⏳ Training in background…', 'badge-warning');
     btn.disabled = true;
     spinner.style.display = 'inline-block';
+    label.textContent = '⏳ Training…';
   } else if (data.status === 'done' || data.indexed) {
     setBannerVisible(false);
     setBadgeText('✅ Trained on your notes', 'badge-success');
     btn.disabled = false;
     spinner.style.display = 'none';
-    btn.innerHTML = '<span class="spinner" id="trainSpinner" style="display:none"></span>🔄 Re-Train AI';
+    label.textContent = '🔄 Re-Train AI';
     stopPolling();
-    // Show a one-time toast
     if (isTraining) {
       isTraining = false;
       showToast('✅ AI training complete! The chatbot is now trained on your course materials.');
@@ -296,6 +363,7 @@ function updateTrainingUI(data) {
     setBadgeText('⚠️ Training error — retry', 'badge-warning');
     btn.disabled = false;
     spinner.style.display = 'none';
+    label.textContent = '🧠 Train AI Now';
     stopPolling();
     showToast('❌ Training error: ' + data.status.replace('error:', ''));
   }
@@ -304,13 +372,12 @@ function updateTrainingUI(data) {
 async function trainAI(classroomId) {
   const btn     = document.getElementById('trainBtn');
   const spinner = document.getElementById('trainSpinner');
+  const label   = document.getElementById('trainBtnLabel');
   btn.disabled  = true;
   spinner.style.display = 'inline-block';
-  btn.lastChild.textContent = ' Starting…';
-
+  label.textContent = ' Starting…';
   try {
-    const res  = await fetch(`/classroom/${classroomId}/train_ai`, {method: 'POST'});
-    const data = await res.json();
+    const data = await (await fetch(`/classroom/${classroomId}/train_ai`, {method: 'POST'})).json();
     if (data.ok) {
       isTraining = true;
       setBannerVisible(true);
@@ -320,32 +387,31 @@ async function trainAI(classroomId) {
     } else {
       btn.disabled = false;
       spinner.style.display = 'none';
+      label.textContent = '🧠 Train AI Now';
       showToast('❌ ' + (data.error || 'Training failed'));
     }
   } catch(e) {
     btn.disabled = false;
     spinner.style.display = 'none';
+    label.textContent = '🧠 Train AI Now';
     showToast('❌ Network error during training.');
   }
 }
 
-// Start polling automatically if training was already running when page loaded
 if (isTraining) { startPolling(); }
 
-// ── Delete Lecture ─────────────────────────────────────────────────────────
+// ── Delete Lecture ─────────────────────────────────────────────────────────────
 
 async function deleteLecture(classroomId, materialId, name) {
   if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
   try {
-    const res  = await fetch(`/classroom/${classroomId}/delete_lecture/${materialId}`, {method: 'POST'});
-    const data = await res.json();
+    const data = await (await fetch(`/classroom/${classroomId}/delete_lecture/${materialId}`, {method: 'POST'})).json();
     if (data.ok) {
-      const el = document.getElementById(`mat-${materialId}`);
-      if (el) el.remove();
+      document.getElementById(`mat-${materialId}`)?.remove();
       showToast(`🗑 ${data.message}`);
       if (data.remaining === 0) {
         const list = document.getElementById('materialsList');
-        if (list) list.innerHTML = '<p class="text-muted" style="padding:var(--space-4)">No lecture materials yet. Upload your PDFs to train the AI chatbot.</p>';
+        if (list) list.outerHTML = '<p class="text-muted" id="noMaterialsMsg" style="padding:var(--space-4)">No lecture materials yet. Upload your PDFs to train the AI chatbot.</p>';
       }
     } else {
       showToast('❌ ' + (data.error || 'Could not delete file.'));
@@ -355,7 +421,45 @@ async function deleteLecture(classroomId, materialId, name) {
   }
 }
 
-// ── Toast ──────────────────────────────────────────────────────────────────
+// ── PDF Modal ──────────────────────────────────────────────────────────────────
+
+function openPdfModal(url, name) {
+  const modal  = document.getElementById('pdfModal');
+  const wrap   = document.getElementById('pdfEmbedWrap');
+  const title  = document.getElementById('pdfModalTitle');
+  const dlBtn  = document.getElementById('pdfDownloadBtn');
+  const tabBtn = document.getElementById('pdfOpenTabBtn');
+
+  title.textContent = name;
+  dlBtn.href  = url;
+  dlBtn.setAttribute('download', name);
+  tabBtn.href = url;
+
+  // Inject iframe freshly so it loads cleanly each time
+  wrap.innerHTML = `<iframe src="${url}" title="${name}" allow="fullscreen"></iframe>`;
+
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closePdfModal() {
+  const modal = document.getElementById('pdfModal');
+  modal.classList.remove('open');
+  document.body.style.overflow = '';
+  // Remove iframe to stop loading / free memory
+  document.getElementById('pdfEmbedWrap').innerHTML = '';
+}
+
+function closePdfModalOnOverlay(e) {
+  if (e.target === document.getElementById('pdfModal')) closePdfModal();
+}
+
+// Keyboard close
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePdfModal();
+});
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
 
 function showToast(msg) {
   let container = document.getElementById('toastContainer');
@@ -366,10 +470,10 @@ function showToast(msg) {
     document.body.appendChild(container);
   }
   const toast = document.createElement('div');
-  toast.style.cssText = 'background:var(--color-surface-2);border:1px solid var(--color-border);color:var(--color-text);padding:12px 18px;border-radius:10px;font-size:14px;box-shadow:var(--shadow-md);max-width:340px;line-height:1.5;animation:slideUp 0.2s ease';
+  toast.style.cssText = 'background:var(--color-surface-2);border:1px solid var(--color-border);color:var(--color-text);padding:12px 18px;border-radius:10px;font-size:14px;box-shadow:var(--shadow-md);max-width:340px;line-height:1.5;';
   toast.textContent = msg;
   container.appendChild(toast);
-  setTimeout(() => { toast.style.opacity='0'; toast.style.transition='opacity 0.3s'; setTimeout(()=>toast.remove(), 300); }, 4000);
+  setTimeout(() => { toast.style.transition = 'opacity 0.3s'; toast.style.opacity = '0'; setTimeout(()=>toast.remove(), 300); }, 4000);
 }
 
 function copyCode(code, elemId) {
