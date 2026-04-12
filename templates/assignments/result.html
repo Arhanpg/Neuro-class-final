@@ -2,8 +2,37 @@
 {% block title %}Result &#8212; {{ sub.assignment_title }}{% endblock %}
 
 {% block content %}
-<div class="container py-4" style="max-width:940px">
+<style>
+.result-hero {
+  border-radius: 16px; padding: 2rem;
+  background: linear-gradient(135deg, #0f172a, #1e3a5f, #0f2027);
+  color: #fff; margin-bottom: 1.75rem;
+}
+.result-grade-circle {
+  width: 110px; height: 110px;
+  border-radius: 50%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  font-size: 2.8rem; font-weight: 900; line-height: 1;
+  margin: 0 auto 1rem;
+}
+.pipeline-badge { display:inline-flex; align-items:center; gap:5px;
+  background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2);
+  border-radius:100px; padding:3px 11px; font-size:.75rem; color:#e0f2fe;
+}
+.feedback-card { border:none; border-radius:14px; box-shadow:0 1px 8px rgba(0,0,0,.06); margin-bottom:1.2rem; overflow:hidden; }
+.feedback-card .card-header { font-weight:700; font-size:.88rem; background:#f8fafc; border-bottom:1px solid #e5e7eb; padding:.65rem 1.1rem; }
+.feedback-card .card-body { padding:1.1rem; }
+.criteria-chip { display:inline-block; background:#eff6ff; border:1px solid #bfdbfe; border-radius:20px; padding:3px 10px; font-size:.78rem; color:#1d4ed8; margin:2px; }
+.stage-b { background:#e9ecef; color:#495057; transition:all .4s ease; font-size:.78rem; padding:4px 12px; border-radius:20px; }
+.stage-b.active { background:#0d6efd; color:#fff; transform:scale(1.06); }
+.stage-b.done   { background:#198754; color:#fff; }
+.score-bar-wrap { background:#e5e7eb; border-radius:100px; height:9px; margin:.4rem auto; width:80%; }
+.score-bar-fill { border-radius:100px; height:9px; transition:width .8s ease; }
+</style>
 
+<div class="container py-4" style="max-width:960px">
+
+  <!-- Breadcrumb -->
   <nav aria-label="breadcrumb" class="mb-3">
     <ol class="breadcrumb">
       <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
@@ -14,87 +43,70 @@
     </ol>
   </nav>
 
-  <!-- ═══ PENDING / GRADING ═══ -->
+  <!-- ═══ PENDING ═══ -->
   {% if not sub.locked %}
   <div class="card border-0 shadow-sm text-center py-5">
-    <div style="font-size:3rem">&#129302;</div>
+    <div style="font-size:3.5rem;">&#129302;</div>
     <h4 class="mt-3 fw-bold">AI Pipeline is Evaluating Your Submission</h4>
-    <p class="text-muted mb-1">The notebook runs 4 stages. This usually takes 30&#8211;90 seconds.</p>
-    <p class="text-muted" style="font-size:.85rem">Do not close this tab.</p>
+    <p class="text-muted mb-1">The pipeline runs 4 stages. Usually takes 30&#8211;90 seconds.</p>
+    <p class="text-muted" style="font-size:.83rem;">Do not close this tab.</p>
 
-    <!-- Live pipeline stage badges -->
+    <!-- Stage badges -->
     <div class="d-flex justify-content-center gap-2 mt-4 flex-wrap" id="stageRow">
-      <span class="badge px-3 py-2 stage-b" id="sb1">&#128196; 1. Extract</span>
+      <span class="stage-b" id="sb1">&#128196; 1. Extract</span>
       <span class="text-muted align-self-center">&rarr;</span>
-      <span class="badge px-3 py-2 stage-b" id="sb2">&#128269; 2. Relevance</span>
+      <span class="stage-b" id="sb2">&#128269; 2. Relevance</span>
       <span class="text-muted align-self-center">&rarr;</span>
-      <span class="badge px-3 py-2 stage-b" id="sb3">&#9878; 3. Evaluate</span>
+      <span class="stage-b" id="sb3">&#9878; 3. Evaluate</span>
       <span class="text-muted align-self-center">&rarr;</span>
-      <span class="badge px-3 py-2 stage-b" id="sb4">&#128274; 4. Lock</span>
+      <span class="stage-b" id="sb4">&#128274; 4. Lock</span>
     </div>
 
-    <!-- Stage descriptions -->
-    <p class="text-muted mt-3" id="stageDesc" style="font-size:.85rem;min-height:1.4em">Extracting text from your PDF submission&hellip;</p>
+    <p class="text-muted mt-3" id="stageDesc" style="font-size:.83rem;min-height:1.5em;">Extracting text from your PDF submission&#8230;</p>
 
-    <div class="progress mt-2 mx-auto" style="height:8px;max-width:380px">
-      <div id="resultPbar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
-           style="width:8%;transition:width .8s"></div>
+    <div class="progress mt-2 mx-auto" style="height:8px;max-width:380px;">
+      <div id="resultPbar" class="progress-bar progress-bar-striped progress-bar-animated"
+           style="width:8%;background:#0d6efd;transition:width .8s;"></div>
     </div>
   </div>
 
-  <style>
-    .stage-b { background:#e9ecef; color:#495057; transition:all .5s ease; font-size:.82rem; }
-    .stage-b.active { background:#0d6efd; color:#fff; transform:scale(1.05); }
-    .stage-b.done   { background:#198754; color:#fff; }
-  </style>
-
   <script>
-    const sbs   = ['sb1','sb2','sb3','sb4'];
-    const descs = [
-      'Extracting text from your PDF submission&#8230;',
-      'Checking relevance: is this submission ON-TOPIC for the course?',
-      'Running rubric evaluation &#8212; scoring each criterion&#8230;',
-      'Finalising score and locking your submission&#8230;'
-    ];
-    const pcts  = [22, 50, 76, 96];
-    let si2 = 0;
-    const bar2  = document.getElementById('resultPbar');
-    const desc2 = document.getElementById('stageDesc');
-
-    function setStage(i) {
-      sbs.forEach((id, idx) => {
-        const el = document.getElementById(id);
-        if (idx < i) el.classList.add('done'), el.classList.remove('active');
-        else if (idx === i) el.classList.add('active'), el.classList.remove('done');
-        else el.classList.remove('active', 'done');
-      });
-      bar2.style.width = pcts[i] + '%';
-      if (desc2) desc2.innerHTML = descs[i];
-    }
-    setStage(0);
-
-    const stgInt = setInterval(() => {
-      if (si2 < sbs.length - 1) { si2++; setStage(si2); }
-    }, 16000);
-
-    // Poll every 5 s
-    setInterval(async () => {
-      try {
-        const r = await fetch('{{ url_for("assignments.submission_status", sub_id=sub.id) }}');
-        const d = await r.json();
-        if (d.graded || d.error) {
-          clearInterval(stgInt);
-          // Light all stages done
-          sbs.forEach(id => {
-            const el = document.getElementById(id);
-            el.classList.remove('active'); el.classList.add('done');
-          });
-          bar2.style.width = '100%';
-          if (desc2) desc2.textContent = d.error ? 'Grading encountered an error. Reloading&#8230;' : 'Grading complete! Loading your results&#8230;';
-          setTimeout(() => window.location.reload(), 900);
-        }
-      } catch(e){}
-    }, 5000);
+  const sbs   = ['sb1','sb2','sb3','sb4'];
+  const descs = [
+    'Extracting text from your PDF submission&#8230;',
+    'Checking relevance: is this submission on-topic for the course?',
+    'Running rubric evaluation &#8212; scoring each criterion&#8230;',
+    'Finalising score and locking your submission&#8230;'
+  ];
+  const pcts  = [22,50,76,96];
+  let si2 = 0;
+  const bar2  = document.getElementById('resultPbar');
+  const desc2 = document.getElementById('stageDesc');
+  function setStage(i) {
+    sbs.forEach((id,idx) => {
+      const el = document.getElementById(id);
+      if (idx < i)  { el.classList.add('done');  el.classList.remove('active'); }
+      else if (idx===i) { el.classList.add('active'); el.classList.remove('done'); }
+      else           { el.classList.remove('active','done'); }
+    });
+    if (bar2)  bar2.style.width  = pcts[i] + '%';
+    if (desc2) desc2.innerHTML   = descs[i];
+  }
+  setStage(0);
+  const stgInt = setInterval(() => { if (si2 < sbs.length-1) { si2++; setStage(si2); } }, 16000);
+  setInterval(async () => {
+    try {
+      const r = await fetch('{{ url_for("assignments.submission_status", sub_id=sub.id) }}');
+      const d = await r.json();
+      if (d.graded || d.error) {
+        clearInterval(stgInt);
+        sbs.forEach(id => { const el=document.getElementById(id); el.classList.remove('active'); el.classList.add('done'); });
+        if (bar2)  bar2.style.width = '100%';
+        if (desc2) desc2.textContent = d.error ? 'Grading error. Reloading&#8230;' : 'Grading complete! Loading results&#8230;';
+        setTimeout(() => window.location.reload(), 900);
+      }
+    } catch(e){}
+  }, 5000);
   </script>
 
   {% else %}
@@ -102,119 +114,110 @@
   {% set final_score = sub.teacher_grade if sub.teacher_grade is not none else sub.ai_grade %}
   {% set final_label = sub.teacher_grade_label if sub.teacher_grade_label else sub.ai_grade_label %}
 
-  <!-- Completed pipeline indicator -->
-  <div class="d-flex justify-content-center gap-2 mb-4 flex-wrap" style="opacity:.7">
-    <span class="badge bg-success px-2 py-1" style="font-size:.72rem">&#128196; Extracted</span>
-    <span class="text-muted align-self-center" style="font-size:.8rem">&rarr;</span>
-    <span class="badge bg-success px-2 py-1" style="font-size:.72rem">&#128269; Relevant</span>
-    <span class="text-muted align-self-center" style="font-size:.8rem">&rarr;</span>
-    <span class="badge bg-success px-2 py-1" style="font-size:.72rem">&#9878; Evaluated</span>
-    <span class="text-muted align-self-center" style="font-size:.8rem">&rarr;</span>
-    <span class="badge bg-dark px-2 py-1" style="font-size:.72rem">&#128274; Locked</span>
+  <!-- Completed pipeline strip -->
+  <div class="d-flex justify-content-center gap-2 mb-4 flex-wrap" style="opacity:.65;">
+    <span class="badge bg-success" style="font-size:.72rem;">&#128196; Extracted</span>
+    <span class="text-muted align-self-center" style="font-size:.85rem;">&rarr;</span>
+    <span class="badge bg-success" style="font-size:.72rem;">&#128269; Relevant</span>
+    <span class="text-muted align-self-center" style="font-size:.85rem;">&rarr;</span>
+    <span class="badge bg-success" style="font-size:.72rem;">&#9878; Evaluated</span>
+    <span class="text-muted align-self-center" style="font-size:.85rem;">&rarr;</span>
+    <span class="badge bg-dark" style="font-size:.72rem;">&#128274; Locked</span>
   </div>
 
   <div class="row g-4">
 
-    <!-- LEFT: Score card -->
+    <!-- ─── LEFT: Score card ─── -->
     <div class="col-md-4">
-      <div class="card border-0 shadow h-100 text-center">
-        <div class="card-body d-flex flex-column justify-content-center py-4 gap-2">
+      <div class="card border-0 shadow h-100">
+        <div class="card-body d-flex flex-column align-items-center justify-content-center py-4 text-center gap-3">
 
-          {% if sub.teacher_grade is not none %}
-            <span class="badge bg-warning text-dark">&#128104;&#8205;&#127979; Teacher Override</span>
-          {% else %}
-            <span class="badge bg-info text-dark">&#129302; AI Auto-Graded</span>
-          {% endif %}
+          <!-- Grade circle -->
+          {% set gc = '#198754' if final_score is not none and final_score >= 90
+                      else '#0d6efd' if final_score is not none and final_score >= 70
+                      else '#f59e0b' if final_score is not none and final_score >= 50
+                      else '#ef4444' if final_score is not none
+                      else '#9ca3af' %}
+          <div class="result-grade-circle" style="background:{{ gc }}20; border: 3px solid {{ gc }};">
+            <span style="color:{{ gc }};">{{ final_label or '?' }}</span>
+          </div>
 
-          <!-- Big grade letter -->
-          <div style="font-size:5rem;font-weight:900;line-height:1;
-            {% if final_score is not none and final_score >= 90 %}color:#198754
-            {% elif final_score is not none and final_score >= 70 %}color:#0d6efd
-            {% elif final_score is not none and final_score >= 50 %}color:#ffc107
-            {% elif final_score is not none %}color:#dc3545
-            {% else %}color:#aaa{% endif %}
-          ">{{ final_label or '?' }}</div>
-
-          <div class="fw-semibold text-muted">
-            {{ (final_score or 0)|round(1) }} / {{ sub.max_marks }}
+          <!-- Score text -->
+          <div>
+            <div class="fw-bold" style="font-size:1.4rem;font-variant-numeric:tabular-nums;">{{ (final_score or 0)|round(1) }} <span class="text-muted fw-normal" style="font-size:1rem;">/ {{ sub.max_marks }}</span></div>
+            {% if sub.teacher_grade is not none %}
+              <span class="badge bg-warning text-dark mt-1">&#128104;&#8205;&#127979; Teacher Override</span>
+            {% else %}
+              <span class="badge bg-info text-dark mt-1">&#129302; AI Auto-Graded</span>
+            {% endif %}
           </div>
 
           <!-- Score bar -->
           {% if final_score is not none %}
-          <div style="background:#e9ecef;border-radius:100px;height:8px;margin:.25rem auto;width:80%">
-            <div style="width:{{ [final_score, 100]|min }}%;border-radius:100px;height:8px;background:
-              {% if final_score >= 90 %}#198754{% elif final_score >= 70 %}#0d6efd{% elif final_score >= 50 %}#ffc107{% else %}#dc3545{% endif %};
-            "></div>
+          <div class="score-bar-wrap">
+            <div class="score-bar-fill" style="width:{{ [final_score,100]|min }}%;background:{{ gc }};"></div>
           </div>
           {% endif %}
 
-          {% if sub.teacher_grade is not none and sub.teacher_feedback %}
-            <div class="mt-1 text-muted fst-italic" style="font-size:.82rem">
-              &#128172; {{ sub.teacher_feedback }}
-            </div>
-          {% endif %}
-
+          <!-- Teacher note -->
           {% if sub.teacher_grade is not none %}
-            <div class="text-muted" style="font-size:.78rem">
-              AI original: {{ (sub.ai_grade or 0)|round(1) }}
-            </div>
+            {% if sub.teacher_feedback %}
+              <div class="bg-warning bg-opacity-10 border border-warning rounded p-2 w-100" style="font-size:.82rem;">
+                &#128172; {{ sub.teacher_feedback }}
+              </div>
+            {% endif %}
+            <div class="text-muted" style="font-size:.78rem;">AI original: {{ (sub.ai_grade or 0)|round(1) }}</div>
           {% endif %}
 
-          <!-- Leaderboard link -->
-          <a href="{{ url_for('assignments.assignment_leaderboard',
-                              classroom_id=classroom_id,
-                              assignment_id=sub.assignment_id) }}"
-             class="btn btn-outline-warning btn-sm mt-1">&#127942; Leaderboard</a>
-
-          <a href="{{ url_for('assignments.grades') }}"
-             class="btn btn-outline-secondary btn-sm">&#8592; All Grades</a>
+          <!-- Actions -->
+          <div class="d-grid gap-2 w-100 mt-1">
+            <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=classroom_id, assignment_id=sub.assignment_id) }}"
+               class="btn btn-outline-warning btn-sm">&#127942; Leaderboard</a>
+            <a href="{{ url_for('assignments.grades') }}"
+               class="btn btn-outline-secondary btn-sm">&#8592; All Grades</a>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- RIGHT: AI feedback panels -->
-    <div class="col-md-8 d-flex flex-column gap-3">
+    <!-- ─── RIGHT: AI Feedback panels ─── -->
+    <div class="col-md-8 d-flex flex-column">
 
-      <!-- Criterion Breakdown (from notebook CRITERION_BREAKDOWN block) -->
-      <div class="card border-0 shadow-sm">
-        <div class="card-header fw-semibold d-flex align-items-center gap-2">
+      <!-- Criterion Breakdown -->
+      <div class="feedback-card card">
+        <div class="card-header d-flex align-items-center gap-2">
           &#128202; Criterion Breakdown
-          <span class="badge bg-primary ms-auto" style="font-size:.72rem">AI Pipeline Output</span>
+          <span class="badge bg-primary ms-auto" style="font-size:.68rem;">AI Pipeline Output</span>
         </div>
         <div class="card-body">
           {% if criteria %}
-            <ul class="list-unstyled mb-0">
+            <div>
               {% for c in criteria %}
-                <li class="d-flex align-items-start gap-2 mb-2 pb-2 border-bottom">
-                  <span class="text-success fw-bold mt-1">&#10003;</span>
-                  <span style="font-size:.88rem">{{ c }}</span>
-                </li>
+                <span class="criteria-chip">&#10003; {{ c }}</span>
               {% endfor %}
-            </ul>
+            </div>
           {% else %}
-            <p class="text-muted mb-0 fst-italic" style="font-size:.88rem">
-              No per-criterion breakdown in AI output.
-            </p>
+            <p class="text-muted mb-0 fst-italic" style="font-size:.87rem;">No per-criterion breakdown available in AI output.</p>
           {% endif %}
         </div>
       </div>
 
-      <!-- Strengths + Weaknesses -->
+      <!-- Strengths & Weaknesses -->
       {% if strengths or weaknesses %}
-      <div class="card border-0 shadow-sm">
-        <div class="card-header fw-semibold">&#128308; Analysis</div>
+      <div class="feedback-card card">
+        <div class="card-header">&#128308; Analysis</div>
         <div class="card-body">
           <div class="row g-3">
             {% if strengths %}
             <div class="col-md-6">
-              <p class="fw-semibold text-success mb-1" style="font-size:.85rem">&#9989; Strengths</p>
-              <p style="font-size:.85rem;white-space:pre-line;color:#333">{{ strengths[:800] }}</p>
+              <p class="fw-semibold text-success mb-2" style="font-size:.83rem;">&#9989; Strengths</p>
+              <p style="font-size:.85rem;white-space:pre-line;line-height:1.65;">{{ strengths[:900] }}</p>
             </div>
             {% endif %}
             {% if weaknesses %}
             <div class="col-md-6">
-              <p class="fw-semibold text-danger mb-1" style="font-size:.85rem">&#9888;&#65039; Weaknesses</p>
-              <p style="font-size:.85rem;white-space:pre-line;color:#333">{{ weaknesses[:800] }}</p>
+              <p class="fw-semibold text-danger mb-2" style="font-size:.83rem;">&#9888;&#65039; Weaknesses</p>
+              <p style="font-size:.85rem;white-space:pre-line;line-height:1.65;">{{ weaknesses[:900] }}</p>
             </div>
             {% endif %}
           </div>
@@ -224,12 +227,12 @@
 
       <!-- Improvement Suggestions -->
       {% if suggestions %}
-      <div class="card border-0 shadow-sm">
-        <div class="card-header fw-semibold">&#128161; Improvement Suggestions</div>
+      <div class="feedback-card card">
+        <div class="card-header">&#128161; Improvement Suggestions</div>
         <div class="card-body">
           <ol class="mb-0 ps-3">
             {% for s in suggestions %}
-              <li class="mb-2" style="font-size:.88rem">{{ s }}</li>
+              <li class="mb-2" style="font-size:.87rem;">{{ s }}</li>
             {% endfor %}
           </ol>
         </div>
@@ -238,26 +241,26 @@
 
       <!-- Detailed Feedback -->
       {% if detailed %}
-      <div class="card border-0 shadow-sm">
-        <div class="card-header fw-semibold">&#128221; Detailed Feedback</div>
+      <div class="feedback-card card">
+        <div class="card-header">&#128221; Detailed Feedback</div>
         <div class="card-body">
-          <p style="font-size:.88rem;white-space:pre-line;line-height:1.7">{{ detailed[:3000] }}</p>
+          <div style="font-size:.87rem;white-space:pre-line;line-height:1.75;">{{ detailed[:3500] }}</div>
         </div>
       </div>
       {% endif %}
 
-      <!-- Fallback: raw AI output -->
+      <!-- Raw fallback -->
       {% if not criteria and not strengths and not suggestions and not detailed and feedback %}
-      <div class="card border-0 shadow-sm">
-        <div class="card-header fw-semibold">&#129302; AI Feedback (raw)</div>
+      <div class="feedback-card card">
+        <div class="card-header">&#129302; AI Feedback (raw)</div>
         <div class="card-body">
-          <pre style="font-size:.83rem;white-space:pre-wrap;max-height:400px;overflow-y:auto">{{ feedback[:4000] }}</pre>
+          <pre style="font-size:.8rem;white-space:pre-wrap;max-height:420px;overflow-y:auto;">{{ feedback[:5000] }}</pre>
         </div>
       </div>
       {% endif %}
 
-    </div><!-- /col -->
-  </div><!-- /row -->
+    </div>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

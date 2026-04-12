@@ -1,85 +1,144 @@
 {% extends 'base.html' %}
-{% block title %}My Grades — NeuroClass{% endblock %}
+{% block title %}My Grades &#8212; NeuroClass{% endblock %}
 
 {% block content %}
-<div class="page-container" style="max-width:860px">
+<style>
+.grades-hero {
+  background: linear-gradient(135deg,#0f172a,#1e3a5f);
+  color:#fff; border-radius:16px; padding:1.6rem 2rem; margin-bottom:2rem;
+}
+.grades-hero h1 { font-size:1.5rem; font-weight:800; margin:0; }
+.grades-hero p  { font-size:.87rem; opacity:.7; margin:.3rem 0 0; }
+.grade-table th {
+  font-size:.75rem; font-weight:700; text-transform:uppercase;
+  letter-spacing:.05em; color:#6b7280;
+  background:#f9fafb; border-bottom:2px solid #e5e7eb;
+  padding:.65rem 1rem;
+}
+.grade-table td { padding:.75rem 1rem; border-bottom:1px solid #f3f4f6; font-size:.875rem; vertical-align:middle; }
+.grade-table tbody tr:hover { background:#f9fafb; }
+.g-pill { display:inline-block; padding:2px 11px; border-radius:100px; font-size:.78rem; font-weight:700; }
+.g-a { background:#dcfce7; color:#166534; }
+.g-b { background:#dbeafe; color:#1e40af; }
+.g-c { background:#fef9c3; color:#854d0e; }
+.g-d { background:#ffedd5; color:#9a3412; }
+.g-f { background:#fee2e2; color:#991b1b; }
+.score-mini-bar { width:80px; height:6px; background:#e5e7eb; border-radius:100px; display:inline-block; overflow:hidden; vertical-align:middle; margin-left:6px; }
+.score-mini-fill { height:100%; border-radius:100px; }
+</style>
 
-  <div class="page-header">
-    <div>
-      <a href="{{ url_for('dashboard') }}" class="btn btn-ghost btn-sm">← Dashboard</a>
-      <h1 style="margin-top:var(--space-2)">📊 My Grades</h1>
-      <p style="color:var(--color-text-muted);font-size:var(--text-sm)">All your assignment results across classrooms.</p>
-    </div>
+<div class="container py-4" style="max-width:960px;">
+
+  <!-- Hero -->
+  <div class="grades-hero">
+    <h1>&#128202; My Grades</h1>
+    <p>All your assignment results across classrooms &#8212; AI graded and teacher overrides.</p>
   </div>
 
   {% if submissions %}
-  <div class="card" style="overflow:hidden">
-    <table style="width:100%;border-collapse:collapse;font-size:var(--text-sm)">
-      <thead>
-        <tr style="background:var(--color-surface-offset);border-bottom:1px solid var(--color-border)">
-          <th style="padding:var(--space-3) var(--space-4);text-align:left;font-weight:600;color:var(--color-text-muted)">Assignment</th>
-          <th style="padding:var(--space-3) var(--space-4);text-align:left;font-weight:600;color:var(--color-text-muted)">Classroom</th>
-          <th style="padding:var(--space-3) var(--space-4);text-align:center;font-weight:600;color:var(--color-text-muted)">Score</th>
-          <th style="padding:var(--space-3) var(--space-4);text-align:center;font-weight:600;color:var(--color-text-muted)">Grade</th>
-          <th style="padding:var(--space-3) var(--space-4);text-align:center;font-weight:600;color:var(--color-text-muted)">Status</th>
-          <th style="padding:var(--space-3) var(--space-4);text-align:center;font-weight:600;color:var(--color-text-muted)">Submitted</th>
-          <th style="padding:var(--space-3) var(--space-4);text-align:center;font-weight:600;color:var(--color-text-muted)">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
+
+  <!-- Summary pills -->
+  {% set total = submissions|length %}
+  {% set graded = submissions|selectattr('final_score','ne',None)|list|length %}
+  {% set overrides = submissions|selectattr('teacher_grade','ne',None)|list|length %}
+  <div class="d-flex gap-3 flex-wrap mb-3">
+    <span class="badge bg-secondary" style="font-size:.8rem;">&#128203; {{ total }} Assignment{% if total != 1 %}s{% endif %}</span>
+    <span class="badge bg-success"   style="font-size:.8rem;">&#9989; {{ graded }} Graded</span>
+    {% if overrides > 0 %}
+    <span class="badge bg-warning text-dark" style="font-size:.8rem;">&#9998; {{ overrides }} Teacher Override{% if overrides != 1 %}s{% endif %}</span>
+    {% endif %}
+    {% set pending = total - graded %}
+    {% if pending > 0 %}
+    <span class="badge bg-warning text-dark" style="font-size:.8rem;">&#9203; {{ pending }} Pending</span>
+    {% endif %}
+  </div>
+
+  <div class="card border-0 shadow-sm" style="border-radius:14px;overflow:hidden;">
+    <div class="table-responsive">
+      <table class="table grade-table mb-0">
+        <thead>
+          <tr>
+            <th>Assignment</th>
+            <th>Classroom</th>
+            <th class="text-center">Score</th>
+            <th class="text-center">Grade</th>
+            <th class="text-center">Source</th>
+            <th class="text-center">Submitted</th>
+            <th class="text-center">Action</th>
+          </tr>
+        </thead>
+        <tbody>
         {% for sub in submissions %}
         {% set score = sub.final_score %}
         {% set grade = sub.final_label %}
-        {% set grade_color = '#198754' if grade == 'A' else '#0d6efd' if grade == 'B' else '#ffc107' if grade == 'C' else '#fd7e14' if grade == 'D' else '#dc3545' %}
-        <tr style="border-bottom:1px solid var(--color-border);transition:background 0.15s" onmouseover="this.style.background='var(--color-surface-offset)'" onmouseout="this.style.background=''">
-          <td style="padding:var(--space-3) var(--space-4);font-weight:500">{{ sub.assignment_title }}</td>
-          <td style="padding:var(--space-3) var(--space-4);color:var(--color-text-muted)">{{ sub.classroom_name }}</td>
-          <td style="padding:var(--space-3) var(--space-4);text-align:center">
+        {% set pct   = ([score, 100]|min) if score is not none else 0 %}
+        {% set bar_c = '#16a34a' if grade=='A' else '#2563eb' if grade=='B' else '#d97706' if grade=='C' else '#ea580c' if grade=='D' else '#dc2626' %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ sub.assignment_title }}</div>
+            {% if sub.max_marks %}
+            <div class="text-muted" style="font-size:.75rem;">Max: {{ sub.max_marks }} pts</div>
+            {% endif %}
+          </td>
+          <td style="color:#6b7280;">{{ sub.classroom_name }}</td>
+
+          <!-- Score + mini bar -->
+          <td class="text-center" style="white-space:nowrap;">
             {% if score is not none %}
-              <span style="font-weight:700;color:{{ grade_color }}">{{ score|round(1) }}</span>
-              <span style="color:var(--color-text-muted);font-size:var(--text-xs)">/{{ sub.max_marks }}</span>
+              <span class="fw-bold" style="font-variant-numeric:tabular-nums;color:{{ bar_c }};">{{ score|round(1) }}</span>
+              <span class="text-muted" style="font-size:.75rem;"> / {{ sub.max_marks }}</span>
+              <br>
+              <span class="score-mini-bar"><span class="score-mini-fill" style="width:{{ pct }}%;background:{{ bar_c }};"></span></span>
             {% else %}
-              <span style="color:var(--color-text-muted)">—</span>
+              <span class="text-muted">&#8212;</span>
             {% endif %}
           </td>
-          <td style="padding:var(--space-3) var(--space-4);text-align:center">
-            {% if grade and grade != '—' and grade != '?' %}
-              <span style="display:inline-block;padding:2px 10px;border-radius:100px;font-weight:700;font-size:var(--text-xs);background:{{ grade_color }}20;color:{{ grade_color }}">{{ grade }}</span>
+
+          <!-- Grade pill -->
+          <td class="text-center">
+            {% if grade and grade not in ('—','?') %}
+              <span class="g-pill {{ 'g-a' if grade=='A' else 'g-b' if grade=='B' else 'g-c' if grade=='C' else 'g-d' if grade=='D' else 'g-f' }}">{{ grade }}</span>
             {% else %}
-              <span style="color:var(--color-text-muted)">—</span>
+              <span class="text-muted">&#8212;</span>
             {% endif %}
           </td>
-          <td style="padding:var(--space-3) var(--space-4);text-align:center">
+
+          <!-- Source badge -->
+          <td class="text-center">
             {% if sub.locked and score is not none %}
               {% if sub.teacher_grade is not none %}
-                <span style="font-size:var(--text-xs);color:var(--color-warning);font-weight:500">👨‍🏫 Teacher Override</span>
+                <span class="badge bg-warning text-dark" style="font-size:.7rem;">&#128104;&#8205;&#127979; Teacher</span>
               {% else %}
-                <span style="font-size:var(--text-xs);color:var(--color-success);font-weight:500">✅ AI Graded</span>
+                <span class="badge bg-info text-dark" style="font-size:.7rem;">&#129302; AI</span>
               {% endif %}
             {% elif sub.locked %}
-              <span style="font-size:var(--text-xs);color:var(--color-text-muted)">⏳ Grading...</span>
+              <span class="badge bg-secondary" style="font-size:.7rem;">&#9203; Grading</span>
             {% else %}
-              <span style="font-size:var(--text-xs);color:var(--color-text-muted)">📤 Submitted</span>
+              <span class="badge bg-light text-dark border" style="font-size:.7rem;">&#128228; Submitted</span>
             {% endif %}
           </td>
-          <td style="padding:var(--space-3) var(--space-4);text-align:center;color:var(--color-text-muted);font-size:var(--text-xs)">
-            {{ sub.submitted_at.strftime('%d %b %Y') if sub.submitted_at else '—' }}
+
+          <td class="text-center" style="color:#9ca3af;font-size:.8rem;white-space:nowrap;">
+            {{ sub.submitted_at.strftime('%d %b %Y') if sub.submitted_at else '&#8212;' }}
           </td>
-          <td style="padding:var(--space-3) var(--space-4);text-align:center">
-            <a href="{{ url_for('assignments.submission_result', sub_id=sub.sub_id) }}" class="btn btn-primary btn-sm" style="font-size:var(--text-xs)">View</a>
+
+          <td class="text-center">
+            <a href="{{ url_for('assignments.submission_result', sub_id=sub.sub_id) }}"
+               class="btn btn-primary btn-sm" style="font-size:.75rem;padding:3px 12px;">View</a>
           </td>
         </tr>
         {% endfor %}
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   {% else %}
-  <div style="text-align:center;padding:var(--space-16) var(--space-8);color:var(--color-text-muted)">
-    <div style="font-size:3rem;margin-bottom:var(--space-4)">📭</div>
-    <h3 style="color:var(--color-text);margin-bottom:var(--space-2)">No submissions yet</h3>
-    <p style="font-size:var(--text-sm)">Submit an assignment in your classroom to see your grades here.</p>
-    <a href="{{ url_for('dashboard') }}" class="btn btn-primary" style="margin-top:var(--space-4)">Go to Dashboard</a>
+  <div class="text-center py-5 text-muted">
+    <div style="font-size:3.5rem;">&#128205;</div>
+    <h4 class="mt-3">No submissions yet</h4>
+    <p style="font-size:.9rem;">Submit an assignment in your classroom to see grades here.</p>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-primary mt-3">&#8592; Back to Dashboard</a>
   </div>
   {% endif %}
 

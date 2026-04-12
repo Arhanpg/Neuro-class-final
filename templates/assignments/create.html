@@ -1,324 +1,345 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 {% block title %}Create Assignment — {{ classroom.name }}{% endblock %}
 
 {% block content %}
 <style>
-/* ─── Create Assignment – Premium Design ─── */
-.ca-wrapper { max-width: 860px; margin: 0 auto; padding: 2rem 1rem 4rem; }
-
-.ca-hero {
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-  border-radius: 16px;
-  padding: 2rem 2.5rem;
-  margin-bottom: 2rem;
-  position: relative;
-  overflow: hidden;
-}
-.ca-hero::before {
-  content: '';
-  position: absolute; inset: 0;
-  background: radial-gradient(ellipse at 80% 20%, rgba(83,52,131,.35) 0%, transparent 60%);
-  pointer-events: none;
-}
-.ca-hero-title { color: #fff; font-size: 1.6rem; font-weight: 800; margin: 0; letter-spacing: -.02em; }
-.ca-hero-sub { color: rgba(255,255,255,.6); font-size: .9rem; margin: .25rem 0 0; }
-.ca-hero-badge {
-  display: inline-flex; align-items: center; gap: .4rem;
-  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
-  border-radius: 20px; padding: .25rem .85rem; color: rgba(255,255,255,.85); font-size: .8rem;
-  margin-top: .75rem;
-}
-
-.ca-card {
-  background: #fff;
-  border-radius: 14px;
-  box-shadow: 0 2px 24px rgba(0,0,0,.07), 0 0 0 1px rgba(0,0,0,.04);
-  overflow: hidden;
-  margin-bottom: 1.25rem;
-}
-.ca-card-header {
-  padding: .85rem 1.5rem;
-  background: #f8f9fc;
-  border-bottom: 1px solid #e9ecf1;
-  display: flex; align-items: center; gap: .6rem;
-}
-.ca-card-header .icon { font-size: 1.1rem; }
-.ca-card-header .label { font-weight: 700; font-size: .88rem; color: #1a1a2e; }
-.ca-card-header .badge-req {
-  margin-left: auto; font-size: .7rem; background: #fee2e2;
-  color: #991b1b; padding: .15rem .55rem; border-radius: 20px; font-weight: 600;
-}
-.ca-card-header .badge-ai {
-  margin-left: auto; font-size: .7rem; background: #fef3c7;
-  color: #92400e; padding: .15rem .55rem; border-radius: 20px; font-weight: 600;
-  display: flex; align-items: center; gap: .25rem;
-}
-.ca-card-body { padding: 1.25rem 1.5rem; }
-
-.ca-input, .ca-select, .ca-textarea {
-  width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px;
-  padding: .6rem .9rem; font-size: .93rem; color: #1e293b;
-  background: #fff; transition: border-color .18s, box-shadow .18s;
-  font-family: inherit;
-}
-.ca-input:focus, .ca-select:focus, .ca-textarea:focus {
-  outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.12);
-}
-.ca-textarea { resize: vertical; line-height: 1.6; }
-.ca-textarea.mono { font-family: 'Fira Code', 'Cascadia Code', monospace; font-size: .84rem; }
-
-.ca-label { font-size: .82rem; font-weight: 600; color: #475569; margin-bottom: .35rem; display: block; }
-
-.ca-row { display: grid; gap: 1rem; }
-.ca-row-3 { grid-template-columns: 1fr 1fr 1fr; }
-.ca-row-2 { grid-template-columns: 1fr 1fr; }
-@media(max-width:640px) { .ca-row-3, .ca-row-2 { grid-template-columns: 1fr; } }
-
-.pipeline-banner {
-  background: linear-gradient(135deg, #eff6ff, #f0fdf4);
-  border: 1px solid #bfdbfe; border-radius: 12px; padding: 1.1rem 1.4rem;
-  margin-bottom: 1.25rem;
-}
-.pipeline-banner h6 { font-size: .83rem; font-weight: 700; color: #1e40af; margin-bottom: .6rem; }
-.pipeline-stages {
-  display: flex; align-items: center; flex-wrap: wrap; gap: .35rem;
-  margin-bottom: .6rem;
-}
-.ps-stage {
-  display: flex; align-items: center; gap: .3rem;
-  background: #fff; border: 1px solid #c7d2fe;
-  border-radius: 20px; padding: .22rem .75rem;
-  font-size: .75rem; font-weight: 600; color: #3730a3;
-}
-.ps-arrow { color: #93c5fd; font-size: .75rem; }
-.pipeline-rules { margin: 0; padding: 0 0 0 1.1rem; }
-.pipeline-rules li { font-size: .8rem; color: #374151; margin-bottom: .15rem; }
-
-.ca-footer {
-  display: flex; align-items: center; justify-content: flex-end; gap: .75rem;
-  padding: 1.25rem 1.5rem;
-  background: #f8f9fc; border-top: 1px solid #e9ecf1;
-}
-.btn-create {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: #fff; border: none; border-radius: 8px;
-  padding: .6rem 2rem; font-size: .92rem; font-weight: 700;
-  cursor: pointer; transition: opacity .18s, transform .12s;
-  display: flex; align-items: center; gap: .4rem;
-}
-.btn-create:hover { opacity: .9; transform: translateY(-1px); }
-.btn-cancel {
-  background: #fff; color: #64748b; border: 1.5px solid #e2e8f0;
-  border-radius: 8px; padding: .6rem 1.4rem; font-size: .92rem; font-weight: 600;
-  cursor: pointer; text-decoration: none; display: inline-flex; align-items: center;
-  transition: border-color .15s;
-}
-.btn-cancel:hover { border-color: #94a3b8; color: #374151; }
-
-.char-counter { font-size: .73rem; color: #94a3b8; text-align: right; margin-top: .2rem; }
+  .nc-create-hero {
+    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+    border-radius: 16px;
+    padding: 2rem 2.2rem 1.6rem;
+    margin-bottom: 2rem;
+    color: #fff;
+  }
+  .nc-create-hero h2 { font-size: 1.5rem; font-weight: 800; margin: 0; }
+  .nc-create-hero p  { font-size: .88rem; opacity: .75; margin: .35rem 0 0; }
+  .nc-badge-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
+    border-radius: 100px; padding: 4px 12px; font-size: .78rem; color: #e0f2fe;
+    margin-bottom: .85rem;
+  }
+  .nc-section-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 1.4rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  }
+  .nc-section-card .nc-card-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: .85rem 1.3rem;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 700; font-size: .92rem;
+  }
+  .nc-section-card .nc-card-body { padding: 1.3rem; }
+  .nc-section-card .nc-card-head .head-icon {
+    width: 30px; height: 30px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+  }
+  .nc-rubric-area {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: .83rem; line-height: 1.6;
+    border-radius: 10px !important;
+    background: #f8fafc;
+  }
+  .nc-tpl-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #f0f9ff; border: 1px solid #bae6fd;
+    border-radius: 20px; padding: 3px 11px; font-size: .76rem;
+    color: #0369a1; cursor: pointer; transition: all .15s;
+    white-space: nowrap;
+  }
+  .nc-tpl-btn:hover { background: #e0f2fe; border-color: #7dd3fc; }
+  .nc-pipeline-row {
+    display: flex; align-items: center; gap: 0;
+    background: linear-gradient(90deg,#f0fdf4,#ecfdf5);
+    border: 1.5px solid #86efac; border-radius: 12px;
+    padding: .75rem 1.1rem; margin-bottom: 1.5rem;
+    flex-wrap: wrap; gap: 6px;
+  }
+  .nc-pipe-stage {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #fff; border: 1px solid #d1fae5;
+    border-radius: 20px; padding: 3px 11px;
+    font-size: .77rem; font-weight: 600; color: #065f46;
+  }
+  .nc-pipe-arrow { color: #6ee7b7; font-size: 1rem; margin: 0 2px; }
+  .nc-char-counter { font-size: .72rem; color: #9ca3af; text-align: right; margin-top: 3px; }
+  .form-label-req::after { content: ' *'; color: #ef4444; }
+  .nc-tip {
+    background: #fffbeb; border: 1px solid #fde68a;
+    border-radius: 8px; padding: .55rem .85rem;
+    font-size: .8rem; color: #92400e; margin-top: .6rem;
+  }
+  .nc-settings-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+  @media(max-width:640px){ .nc-settings-grid { grid-template-columns: 1fr 1fr; } }
+  @media(max-width:420px){ .nc-settings-grid { grid-template-columns: 1fr; } }
+  .btn-create-main {
+    background: linear-gradient(135deg,#0d6efd,#0284c7);
+    color: #fff; border: none; border-radius: 10px;
+    padding: .75rem 2.2rem; font-size: 1rem; font-weight: 700;
+    cursor: pointer; transition: all .2s; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-create-main:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(13,110,253,.35); }
+  .btn-create-main:active { transform: translateY(0); }
 </style>
 
-<div class="ca-wrapper">
+<div class="container py-4" style="max-width: 820px;">
 
   <!-- Breadcrumb -->
-  <nav aria-label="breadcrumb" class="mb-4">
-    <ol class="breadcrumb" style="font-size:.83rem">
-      <li class="breadcrumb-item"><a href="{{ url_for('teacher_dashboard') }}">Dashboard</a></li>
-      <li class="breadcrumb-item">
-        <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}">{{ classroom.name }}</a>
-      </li>
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+      <li class="breadcrumb-item"><a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}">{{ classroom.name }}</a></li>
       <li class="breadcrumb-item active">Create Assignment</li>
     </ol>
   </nav>
 
+  <!-- Hero banner -->
+  <div class="nc-create-hero">
+    <div class="nc-badge-pill">&#129302; AI-Powered Grading &bull; LangGraph Pipeline</div>
+    <h2>&#128203; New Assignment for <em>{{ classroom.name }}</em></h2>
+    <p>Fill in the details below. The AI grades each submission <strong>criterion-by-criterion</strong> using your rubric.</p>
+  </div>
+
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for cat, msg in messages %}
-      <div class="alert alert-{{ cat }} alert-dismissible fade show">
-        {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-      </div>
+    <div class="alert alert-{{ cat }} alert-dismissible fade show">
+      {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
     {% endfor %}
   {% endwith %}
 
-  <!-- Hero Banner -->
-  <div class="ca-hero">
-    <div class="ca-hero-title">&#128203; New Assignment</div>
-    <div class="ca-hero-sub">for <strong style="color:#a5b4fc">{{ classroom.name }}</strong></div>
-    <div class="ca-hero-badge">&#129302; AI Auto-Grading Enabled &bull; LangGraph Pipeline</div>
+  <!-- AI Pipeline Banner -->
+  <div class="nc-pipeline-row">
+    <span style="font-size:.78rem;font-weight:700;color:#064e3b;margin-right:6px;">AI Pipeline:</span>
+    <span class="nc-pipe-stage">&#128196; 1. Extract Text</span>
+    <span class="nc-pipe-arrow">&#8594;</span>
+    <span class="nc-pipe-stage">&#128269; 2. Relevance Check</span>
+    <span class="nc-pipe-arrow">&#8594;</span>
+    <span class="nc-pipe-stage">&#9878; 3. Rubric Evaluation</span>
+    <span class="nc-pipe-arrow">&#8594;</span>
+    <span class="nc-pipe-stage">&#128274; 4. Lock &amp; Score</span>
   </div>
 
-  <form method="POST" enctype="multipart/form-data">
+  <form method="POST" enctype="multipart/form-data" id="createForm">
 
-    <!-- Card 1: Title -->
-    <div class="ca-card">
-      <div class="ca-card-header">
-        <span class="icon">&#128196;</span>
-        <span class="label">Assignment Title</span>
-        <span class="badge-req">Required</span>
+    <!-- SECTION 1: Basic Info -->
+    <div class="nc-section-card">
+      <div class="nc-card-head">
+        <div class="head-icon" style="background:#eff6ff;">&#128221;</div>
+        <span>Basic Information</span>
       </div>
-      <div class="ca-card-body">
-        <label class="ca-label" for="titleInput">Give a clear, descriptive title students will see</label>
-        <input id="titleInput" type="text" name="title" class="ca-input" required
-               placeholder="e.g. Module 3 &#8211; Neural Networks Implementation"
-               oninput="countChars(this,'titleCount',80)">
-        <div class="char-counter"><span id="titleCount">0</span>/80</div>
-      </div>
-    </div>
+      <div class="nc-card-body">
 
-    <!-- Card 2: Instructions -->
-    <div class="ca-card">
-      <div class="ca-card-header">
-        <span class="icon">&#128221;</span>
-        <span class="label">Instructions &amp; Description</span>
-      </div>
-      <div class="ca-card-body">
-        <label class="ca-label" for="instrInput">Describe what students need to submit, allowed resources, format, etc.</label>
-        <textarea id="instrInput" name="assign_text" class="ca-textarea" rows="4"
-          placeholder="e.g. Submit a PDF report covering: implementation details, results, and analysis.
-Allowed: Python, PyTorch. Not allowed: pre-trained models."
-          oninput="countChars(this,'instrCount',2000)"></textarea>
-        <div class="char-counter"><span id="instrCount">0</span>/2000</div>
-      </div>
-    </div>
-
-    <!-- Card 3: Grading Rubric (most important) -->
-    <div class="ca-card" style="border: 2px solid #e0e7ff;">
-      <div class="ca-card-header" style="background:#eef2ff">
-        <span class="icon">&#9878;</span>
-        <span class="label">Grading Rubric</span>
-        <span class="badge-ai">&#129302; AI grades strictly against this &bull; Required</span>
-      </div>
-      <div class="ca-card-body">
-        <label class="ca-label">List each criterion with its weight. The AI scores each one independently.</label>
-        <textarea name="rubric" class="ca-textarea mono" rows="10" required
-          id="rubricInput" oninput="countChars(this,'rubricCount',5000)"
-          placeholder="- Code Correctness (40%): All required functions implemented and work correctly
-- Documentation (20%): Code is well-commented; README explains usage
-- Efficiency (20%): Optimal algorithms; no unnecessary loops or redundancy
-- Testing (20%): Unit tests provided; edge cases handled"></textarea>
-        <div class="d-flex justify-content-between align-items-center mt-1">
-          <div style="font-size:.78rem;color:#6366f1">
-            &#9432; Missing criteria = 0 pts for that criterion. Off-topic submissions are capped at 30%.
-          </div>
-          <div class="char-counter"><span id="rubricCount">0</span>/5000</div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold form-label-req">Assignment Title</label>
+          <input type="text" name="title" class="form-control" maxlength="200"
+                 placeholder="e.g. Module 3 &#8212; Neural Networks Report"
+                 oninput="countChars(this,'cc-title',200)" required>
+          <div class="nc-char-counter" id="cc-title">0 / 200</div>
         </div>
-        <!-- Rubric quick-fill templates -->
-        <div class="mt-2 d-flex flex-wrap gap-2" style="font-size:.76rem">
-          <span style="color:#64748b;font-weight:600">Quick templates:</span>
-          <button type="button" class="btn btn-sm btn-outline-secondary py-0"
-                  onclick="fillRubric('coding')">💻 Coding</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary py-0"
-                  onclick="fillRubric('report')">📄 Report</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary py-0"
-                  onclick="fillRubric('project')">🚀 Project</button>
+
+        <div class="mb-1">
+          <label class="form-label fw-semibold">Instructions / Description</label>
+          <textarea name="assign_text" class="form-control" rows="4"
+                    placeholder="Describe what students need to submit, expected format, resources&#8230;"
+                    oninput="countChars(this,'cc-desc',2000)"></textarea>
+          <div class="nc-char-counter" id="cc-desc">0 / 2000</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- SECTION 2: Grading Rubric -->
+    <div class="nc-section-card">
+      <div class="nc-card-head">
+        <div class="head-icon" style="background:#fef3c7;">&#127919;</div>
+        <span>Grading Rubric <span style="font-weight:400;color:#6b7280;font-size:.83rem">&nbsp;&#8212; AI grades strictly against this</span></span>
+      </div>
+      <div class="nc-card-body">
+
+        <div class="d-flex gap-2 flex-wrap mb-2" style="font-size:.78rem">
+          <span style="font-size:.8rem;color:#6b7280;align-self:center;">Quick templates:</span>
+          <button type="button" class="nc-tpl-btn" onclick="fillTemplate('coding')">&#128187; Coding</button>
+          <button type="button" class="nc-tpl-btn" onclick="fillTemplate('report')">&#128196; Report</button>
+          <button type="button" class="nc-tpl-btn" onclick="fillTemplate('project')">&#128293; Project</button>
+        </div>
+
+        <textarea name="rubric" id="rubricArea" class="form-control nc-rubric-area" rows="10"
+                  placeholder="List criteria clearly with weights, e.g.:
+- Code Correctness (40%): All required functions work as expected
+- Documentation (20%): Code is commented; README is present
+- Algorithm Efficiency (25%): Uses optimal data structures
+- Testing (15%): Unit tests cover edge cases"
+                  oninput="countChars(this,'cc-rubric',8000)" required></textarea>
+        <div class="nc-char-counter" id="cc-rubric">0 / 8000</div>
+
+        <div class="nc-tip">
+          &#128161; The AI evaluates each submission <strong>criterion by criterion</strong> using this exact text.
+          If a criterion is absent, the student scores 0 for it. Be specific.
         </div>
       </div>
     </div>
 
-    <!-- Card 4: Settings row -->
-    <div class="ca-card">
-      <div class="ca-card-header">
-        <span class="icon">⚙️</span>
-        <span class="label">Assignment Settings</span>
+    <!-- SECTION 3: Dates & Marks -->
+    <div class="nc-section-card">
+      <div class="nc-card-head">
+        <div class="head-icon" style="background:#fdf4ff;">&#128197;</div>
+        <span>Dates &amp; Marks</span>
       </div>
-      <div class="ca-card-body">
-        <div class="ca-row ca-row-3">
-          <div>
-            <label class="ca-label">Due Date</label>
-            <input type="date" name="due_date" class="ca-input">
+      <div class="nc-card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Due Date</label>
+            <input type="date" name="due_date" class="form-control">
           </div>
-          <div>
-            <label class="ca-label">Max Marks</label>
-            <input type="number" name="max_marks" class="ca-input" value="100" min="1" max="1000">
+          <div class="col-md-3">
+            <label class="form-label fw-semibold form-label-req">Max Marks</label>
+            <input type="number" name="max_marks" class="form-control" value="100" min="1" max="1000" required>
           </div>
-          <div>
-            <label class="ca-label">Max Attempts</label>
-            <input type="number" name="max_attempts" class="ca-input" value="1" min="1" max="10">
-          </div>
-        </div>
-        <div class="ca-row ca-row-2 mt-3">
-          <div>
-            <label class="ca-label">Visibility</label>
-            <select name="visibility" class="ca-select">
-              <option value="published" selected>&#128994; Published (students can see)</option>
-              <option value="draft">&#128997; Draft (hidden from students)</option>
-              <option value="closed">&#128308; Closed (no new submissions)</option>
-            </select>
-          </div>
-          <div>
-            <label class="ca-label">AI Strictness</label>
-            <select name="strictness" class="ca-select">
-              <option value="balanced" selected>⚖️ Balanced</option>
-              <option value="strict">🔒 Strict (no partial credit)</option>
-              <option value="lenient">🕊️ Lenient (partial credit)</option>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Max Attempts</label>
+            <select name="max_attempts" class="form-select">
+              <option value="1" selected>1 (locked)</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="0">Unlimited</option>
             </select>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- AI Pipeline Info -->
-    <div class="pipeline-banner">
-      <h6>&#129302; AI Auto-Grading Pipeline (LangGraph)</h6>
-      <div class="pipeline-stages">
-        <span class="ps-stage">&#128196; 1. Extract Text</span>
-        <span class="ps-arrow">&rarr;</span>
-        <span class="ps-stage">&#128269; 2. Relevance Check</span>
-        <span class="ps-arrow">&rarr;</span>
-        <span class="ps-stage">&#9878; 3. Rubric Grading</span>
-        <span class="ps-arrow">&rarr;</span>
-        <span class="ps-stage">&#128274; 4. Lock &amp; Score</span>
+    <!-- SECTION 4: AI Settings -->
+    <div class="nc-section-card">
+      <div class="nc-card-head">
+        <div class="head-icon" style="background:#f0fdf4;">&#129302;</div>
+        <span>AI Grading Settings</span>
       </div>
-      <ul class="pipeline-rules">
-        <li>Off-topic submissions are automatically capped at <strong>30/100</strong>.</li>
-        <li>Each rubric criterion is graded independently — missing = 0 for that criterion.</li>
-        <li>Submissions are <strong>permanently locked</strong> after grading.</li>
-        <li>You can <strong>override any AI grade</strong> at any time from the submissions dashboard.</li>
-      </ul>
+      <div class="nc-card-body">
+        <div class="nc-settings-grid">
+          <div>
+            <label class="form-label fw-semibold" style="font-size:.85rem;">Visibility</label>
+            <select name="visibility" class="form-select form-select-sm">
+              <option value="published">&#127759; Published</option>
+              <option value="draft">&#9997; Draft</option>
+              <option value="closed">&#128274; Closed</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label fw-semibold" style="font-size:.85rem;">AI Strictness</label>
+            <select name="strictness" class="form-select form-select-sm">
+              <option value="balanced" selected>&#9878; Balanced</option>
+              <option value="strict">&#128308; Strict</option>
+              <option value="lenient">&#128994; Lenient</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label fw-semibold" style="font-size:.85rem;">Feedback Style</label>
+            <select name="feedback_style" class="form-select form-select-sm">
+              <option value="detailed" selected>&#128221; Detailed</option>
+              <option value="brief">&#9889; Brief</option>
+              <option value="coaching">&#127775; Coaching</option>
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Footer actions -->
-    <div class="ca-card" style="overflow:visible">
-      <div class="ca-footer">
-        <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn-cancel">Cancel</a>
-        <button type="submit" class="btn-create">
-          <span>&#43;</span> Create Assignment
-        </button>
+    <!-- SECTION 5: Optional File Attachment -->
+    <div class="nc-section-card">
+      <div class="nc-card-head">
+        <div class="head-icon" style="background:#fff7ed;">&#128193;</div>
+        <span>Assignment File <span style="font-weight:400;color:#9ca3af;font-size:.82rem">&nbsp;(optional)</span></span>
       </div>
+      <div class="nc-card-body">
+        <p style="font-size:.83rem;color:#6b7280;margin-bottom:.75rem;">
+          Attach a PDF with starter code, dataset, or detailed instructions for students.
+        </p>
+        <div id="fileDropZone"
+             class="border rounded-3 p-3 text-center"
+             style="border-style:dashed!important;cursor:pointer;background:#fafafa;transition:all .2s;"
+             onclick="document.getElementById('assignFileInput').click()">
+          <div style="font-size:2rem;">&#128228;</div>
+          <p class="mb-1" style="font-size:.85rem;font-weight:600;">Click to attach a file</p>
+          <p class="text-muted mb-0" style="font-size:.78rem;">PDF, DOC, DOCX &#8212; max 20 MB</p>
+          <input type="file" id="assignFileInput" name="assign_file"
+                 accept=".pdf,.doc,.docx" class="d-none"
+                 onchange="showAttachedFile(this)">
+        </div>
+        <div id="attachedFilePreview" class="mt-2 d-none">
+          <div class="alert alert-info d-flex align-items-center gap-2 py-2 mb-0">
+            <span>&#128206;</span><span id="attachedFileName"></span>
+            <button type="button" class="btn-close ms-auto btn-sm"
+                    onclick="clearAttach()"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Submit -->
+    <div class="d-flex gap-3 align-items-center justify-content-end">
+      <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}"
+         class="btn btn-outline-secondary">Cancel</a>
+      <button type="submit" class="btn-create-main">
+        &#128640; Publish Assignment
+      </button>
     </div>
 
   </form>
 </div>
 
 <script>
+// Character counters
 function countChars(el, counterId, max) {
-  const len = el.value.length;
-  const el2 = document.getElementById(counterId);
-  if (!el2) return;
-  el2.textContent = len;
-  el2.style.color = len > max * .9 ? '#ef4444' : '#94a3b8';
+  const cnt = document.getElementById(counterId);
+  if (cnt) cnt.textContent = el.value.length + ' / ' + max;
 }
 
-const RUBRIC_TEMPLATES = {
-  coding: `- Code Correctness (40%): All required functions are implemented and produce correct output
-- Code Quality & Style (20%): Clean, readable code; proper naming conventions; no dead code
-- Documentation (20%): Each function is commented; a README explains how to run the code
-- Testing (20%): Unit tests provided; edge cases and error handling are tested`,
-  report: `- Content & Accuracy (40%): All required topics are covered accurately with supporting evidence
-- Structure & Clarity (25%): Logical flow; clear headings; easy to follow arguments
-- Analysis & Critical Thinking (20%): Insightful analysis; conclusions are well-supported
-- References & Formatting (15%): Proper citations; follows the required format (APA/IEEE)`,
-  project: `- Functionality (35%): All required features work end-to-end without errors
-- Code Architecture (25%): Modular, well-structured codebase; separation of concerns
-- Documentation (20%): README, inline comments, and API docs are complete and clear
-- Testing & Reliability (20%): Comprehensive tests; app handles edge cases gracefully`
+// Quick rubric templates
+const TEMPLATES = {
+  coding: `- Code Correctness (40%): All required functions work as expected and produce correct output\n- Documentation (20%): Code is commented; README is present and clear\n- Algorithm Efficiency (25%): Uses appropriate data structures; avoids unnecessary complexity\n- Testing (15%): Unit tests cover normal cases and edge cases`,
+  report: `- Introduction & Problem Statement (20%): Clear problem definition and context\n- Methodology (30%): Well-explained approach; appropriate techniques used\n- Results & Analysis (30%): Accurate results presented; meaningful analysis provided\n- Conclusion (10%): Summarises findings and future directions\n- Formatting & References (10%): Proper citations, grammar, and structure`,
+  project: `- Functionality (35%): All core features implemented and working end-to-end\n- Code Quality (25%): Clean, readable, well-structured code with comments\n- Design & UX (20%): Intuitive interface; good user experience\n- Documentation (10%): README with setup instructions and feature description\n- Presentation (10%): Demonstration covers all key features clearly`
 };
-
-function fillRubric(type) {
-  const el = document.getElementById('rubricInput');
-  if (el && RUBRIC_TEMPLATES[type]) {
-    el.value = RUBRIC_TEMPLATES[type];
-    countChars(el, 'rubricCount', 5000);
+function fillTemplate(key) {
+  const ta = document.getElementById('rubricArea');
+  if (ta) {
+    ta.value = TEMPLATES[key];
+    countChars(ta, 'cc-rubric', 8000);
+    ta.focus();
   }
+}
+
+// Attached file preview
+function showAttachedFile(input) {
+  if (input.files[0]) {
+    document.getElementById('attachedFileName').textContent = input.files[0].name;
+    document.getElementById('attachedFilePreview').classList.remove('d-none');
+  }
+}
+function clearAttach() {
+  document.getElementById('assignFileInput').value = '';
+  document.getElementById('attachedFilePreview').classList.add('d-none');
+}
+
+// Drag-and-drop for attached file
+const fdz = document.getElementById('fileDropZone');
+if (fdz) {
+  fdz.addEventListener('dragover', e => { e.preventDefault(); fdz.style.background='#e0f2fe'; });
+  fdz.addEventListener('dragleave', () => fdz.style.background = '#fafafa');
+  fdz.addEventListener('drop', e => {
+    e.preventDefault(); fdz.style.background = '#fafafa';
+    const f = e.dataTransfer.files[0];
+    if (f) {
+      const inp = document.getElementById('assignFileInput');
+      const dt = new DataTransfer(); dt.items.add(f); inp.files = dt.files;
+      showAttachedFile(inp);
+    }
+  });
 }
 </script>
 {% endblock %}
