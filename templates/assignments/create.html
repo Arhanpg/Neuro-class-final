@@ -1,182 +1,123 @@
-{% extends 'base.html' %}
-{% block title %}Create Assignment{% endblock %}
-{% block content %}
-<div class="container py-4" style="max-width:860px">
-  <div class="d-flex align-items-center gap-3 mb-4">
-    <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary btn-sm">← Back</a>
-    <h2 class="mb-0">Create Assignment</h2>
-    <span class="badge bg-primary">{{ classroom.name }}</span>
-  </div>
+{% extends "base.html" %}
+{% block title %}Create Assignment — {{ classroom.name }}{% endblock %}
 
-  <form id="createForm" method="POST" enctype="multipart/form-data">
-    <!-- Basic Info -->
-    <div class="card mb-4 shadow-sm">
-      <div class="card-header fw-semibold">📋 Assignment Details</div>
-      <div class="card-body">
+{% block content %}
+<div class="container py-4" style="max-width:800px">
+
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ url_for('teacher_dashboard') }}">Dashboard</a></li>
+      <li class="breadcrumb-item">
+        <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}">{{ classroom.name }}</a>
+      </li>
+      <li class="breadcrumb-item active">Create Assignment</li>
+    </ol>
+  </nav>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }} alert-dismissible fade show">
+        {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="card shadow-sm border-0">
+    <div class="card-header bg-primary text-white d-flex align-items-center gap-2 py-3">
+      <span style="font-size:1.4rem">&#128203;</span>
+      <h5 class="mb-0">New Assignment for <em>{{ classroom.name }}</em></h5>
+    </div>
+
+    <div class="card-body p-4">
+      <form method="POST" enctype="multipart/form-data">
+
+        <!-- Title -->
         <div class="mb-3">
-          <label class="form-label">Title <span class="text-danger">*</span></label>
-          <input type="text" name="title" class="form-control" required placeholder="e.g. Week 3: Neural Networks Assignment">
+          <label class="form-label fw-semibold">Assignment Title <span class="text-danger">*</span></label>
+          <input type="text" name="title" class="form-control" required
+                 placeholder="e.g. Module 3 – Neural Networks">
         </div>
-        <div class="row g-3">
+
+        <!-- Description / Instructions -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Instructions / Description</label>
+          <textarea name="assign_text" class="form-control" rows="4"
+            placeholder="Describe what students need to submit, expected format, resources allowed, etc."></textarea>
+        </div>
+
+        <!-- Rubric — core field that AI uses -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">
+            Grading Rubric <span class="text-danger">*</span>
+            <span class="badge bg-warning text-dark ms-2 fw-normal" style="font-size:.75rem">
+              &#129302; AI grades strictly against this
+            </span>
+          </label>
+          <textarea name="rubric" class="form-control font-monospace" rows="9" required
+            placeholder="List criteria clearly with weights, e.g.:
+- Code Correctness (40%): All required functions work as expected
+- Documentation (20%): Code is commented; README is present
+- Efficiency (20%): Optimal algorithms are used
+- Testing (20%): Unit tests provided and passing"></textarea>
+          <div class="form-text">
+            The AI evaluates each submission <strong>criterion by criterion</strong> using this exact text.
+            If a criterion is absent, the student scores 0 for it. Be specific.
+          </div>
+        </div>
+
+        <!-- Due Date + Max Marks row -->
+        <div class="row g-3 mb-3">
           <div class="col-md-6">
-            <label class="form-label">Deadline</label>
-            <input type="datetime-local" name="due_date" class="form-control">
+            <label class="form-label fw-semibold">Due Date</label>
+            <input type="date" name="due_date" class="form-control">
           </div>
           <div class="col-md-3">
-            <label class="form-label">Max Marks</label>
+            <label class="form-label fw-semibold">Max Marks</label>
             <input type="number" name="max_marks" class="form-control" value="100" min="1" max="1000">
           </div>
           <div class="col-md-3">
-            <label class="form-label">Max Attempts</label>
-            <select name="max_attempts" class="form-select">
-              {% for i in range(1,6) %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
-            </select>
-          </div>
-        </div>
-        <div class="row g-3 mt-1">
-          <div class="col-md-6">
-            <label class="form-label">Visibility</label>
+            <label class="form-label fw-semibold">Visibility</label>
             <select name="visibility" class="form-select">
-              <option value="draft">Draft (hidden from students)</option>
               <option value="published" selected>Published</option>
-              <option value="closed">Closed (no new submissions)</option>
+              <option value="draft">Draft (hidden)</option>
+              <option value="closed">Closed</option>
             </select>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Content -->
-    <div class="card mb-4 shadow-sm">
-      <div class="card-header fw-semibold">📝 Assignment Content</div>
-      <div class="card-body">
-        <div class="mb-3">
-          <label class="form-label">Content Source</label>
-          <div class="btn-group w-100" role="group">
-            <input type="radio" class="btn-check" name="source_label" id="src_text" value="text" checked>
-            <label class="btn btn-outline-primary" for="src_text">✍️ Rich Text Editor</label>
-            <input type="radio" class="btn-check" name="source_label" id="src_file" value="file">
-            <label class="btn btn-outline-primary" for="src_file">📎 Upload PDF/DOCX</label>
+        <!-- AI Pipeline Info Banner -->
+        <div class="alert alert-info d-flex gap-3 align-items-start mb-4">
+          <span style="font-size:1.6rem;line-height:1">&#129302;</span>
+          <div style="font-size:.9rem">
+            <strong>AI Auto-Grading Pipeline (LangGraph)</strong> — every student submission goes through:
+            <div class="d-flex flex-wrap gap-2 mt-2">
+              <span class="badge bg-light text-dark border px-2 py-1">&#128196; 1. Extract Text</span>
+              <span class="text-muted">&rarr;</span>
+              <span class="badge bg-light text-dark border px-2 py-1">&#128269; 2. Relevance Check</span>
+              <span class="text-muted">&rarr;</span>
+              <span class="badge bg-light text-dark border px-2 py-1">&#9878; 3. Rubric Grading</span>
+              <span class="text-muted">&rarr;</span>
+              <span class="badge bg-light text-dark border px-2 py-1">&#128274; 4. Lock &amp; Score</span>
+            </div>
+            <ul class="mb-0 mt-2 ps-3" style="font-size:.85rem">
+              <li>OFF-TOPIC submissions are capped at <strong>30/100</strong> automatically.</li>
+              <li>Missing documentation scores <strong>0</strong> for the documentation criterion.</li>
+              <li>Submission is <strong>permanently locked</strong> after grading — no resubmission.</li>
+              <li>You can override any AI grade at any time from the submissions dashboard.</li>
+            </ul>
           </div>
         </div>
-        <div id="textEditor">
-          <textarea name="assign_text" class="form-control" rows="8" placeholder="Write your assignment description, problem statement, instructions..."></textarea>
-        </div>
-        <div id="fileUpload" style="display:none">
-          <input type="file" name="assign_file" class="form-control" accept=".pdf,.doc,.docx">
-          <small class="text-muted">Accepted: PDF, DOC, DOCX</small>
-        </div>
-      </div>
-    </div>
 
-    <!-- Rubric Builder -->
-    <div class="card mb-4 shadow-sm">
-      <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
-        <span>⚖️ Rubric Builder</span>
-        <span id="weightTotal" class="badge bg-secondary">Total: 0%</span>
-      </div>
-      <div class="card-body">
-        <div id="rubricRows">
-          <div class="row g-2 mb-2 rubric-row">
-            <div class="col-7"><input type="text" name="rubric_criterion[]" class="form-control" placeholder="Criterion name (e.g. Code Quality)"></div>
-            <div class="col-3"><input type="number" name="rubric_weight[]" class="form-control weight-input" placeholder="Weight %" min="1" max="100"></div>
-            <div class="col-2"><button type="button" class="btn btn-outline-danger btn-sm w-100 remove-row">✕</button></div>
-          </div>
+        <div class="d-flex gap-2 justify-content-end">
+          <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}"
+             class="btn btn-outline-secondary">Cancel</a>
+          <button type="submit" class="btn btn-primary px-4">
+            &#43; Create Assignment
+          </button>
         </div>
-        <button type="button" id="addCriterion" class="btn btn-outline-secondary btn-sm mt-2">+ Add Criterion</button>
-        <div id="weightError" class="text-danger mt-2" style="display:none">⚠️ Weights must sum to 100%</div>
-        <textarea name="rubric" id="rubricHidden" style="display:none"></textarea>
-      </div>
-    </div>
 
-    <!-- AI Settings -->
-    <div class="card mb-4 shadow-sm">
-      <div class="card-header fw-semibold">🤖 AI Evaluation Settings</div>
-      <div class="card-body row g-3">
-        <div class="col-md-4">
-          <label class="form-label">Model Preference</label>
-          <select name="ai_model" class="form-select">
-            <option value="auto">Auto (Fallback chain)</option>
-            <option value="gemini">Gemini 2.0 Flash</option>
-            <option value="openrouter">OpenRouter Llama-3.3-70B</option>
-            <option value="groq">Groq Llama-3.3-70B</option>
-          </select>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Strictness</label>
-          <select name="strictness" class="form-select">
-            <option value="lenient">Lenient</option>
-            <option value="balanced" selected>Balanced</option>
-            <option value="strict">Strict</option>
-          </select>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Feedback Style</label>
-          <select name="feedback_style" class="form-select">
-            <option value="brief">Brief</option>
-            <option value="detailed" selected>Detailed</option>
-            <option value="with_suggestions">With Suggestions</option>
-          </select>
-        </div>
-      </div>
+      </form>
     </div>
-
-    <div class="d-flex gap-2">
-      <button type="submit" class="btn btn-primary px-5">✅ Create Assignment</button>
-      <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary">Cancel</a>
-    </div>
-  </form>
+  </div>
 </div>
-
-<script>
-// Source toggle
-document.querySelectorAll('input[name="source_label"]').forEach(r => {
-  r.addEventListener('change', () => {
-    document.getElementById('textEditor').style.display = r.value === 'text' ? 'block' : 'none';
-    document.getElementById('fileUpload').style.display = r.value === 'file' ? 'block' : 'none';
-  });
-});
-
-// Rubric builder
-document.getElementById('addCriterion').addEventListener('click', () => {
-  const row = document.querySelector('.rubric-row').cloneNode(true);
-  row.querySelectorAll('input').forEach(i => i.value = '');
-  document.getElementById('rubricRows').appendChild(row);
-  updateWeights();
-});
-document.getElementById('rubricRows').addEventListener('click', e => {
-  if (e.target.classList.contains('remove-row')) {
-    if (document.querySelectorAll('.rubric-row').length > 1)
-      e.target.closest('.rubric-row').remove();
-    updateWeights();
-  }
-});
-document.getElementById('rubricRows').addEventListener('input', updateWeights);
-
-function updateWeights() {
-  let total = 0;
-  document.querySelectorAll('.weight-input').forEach(i => total += parseInt(i.value||0));
-  const badge = document.getElementById('weightTotal');
-  badge.textContent = 'Total: ' + total + '%';
-  badge.className = 'badge ' + (total === 100 ? 'bg-success' : total > 100 ? 'bg-danger' : 'bg-secondary');
-  document.getElementById('weightError').style.display = (total !== 100 && total > 0) ? 'block' : 'none';
-}
-
-// Build rubric text on submit
-document.getElementById('createForm').addEventListener('submit', function(e) {
-  const criteria = document.querySelectorAll('input[name="rubric_criterion[]"]');
-  const weights  = document.querySelectorAll('input[name="rubric_weight[]"]');
-  let total = 0, parts = [];
-  criteria.forEach((c, i) => {
-    const w = parseInt(weights[i].value||0);
-    if (c.value.trim()) { parts.push(c.value.trim() + ': ' + w + '%'); total += w; }
-  });
-  if (parts.length > 0 && total !== 100) {
-    e.preventDefault();
-    document.getElementById('weightError').style.display = 'block';
-    return;
-  }
-  document.getElementById('rubricHidden').value = parts.join('\n');
-});
-</script>
 {% endblock %}

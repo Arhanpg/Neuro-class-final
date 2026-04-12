@@ -1,43 +1,48 @@
--- Assignment Management System - Migration
--- Run this against your MySQL database
+-- migrate_assignments.sql
+-- Run once to add/update assignment tables.
+-- Safe to re-run (uses IF NOT EXISTS and ALTER IGNORE).
 
-ALTER TABLE assignments
-  ADD COLUMN IF NOT EXISTS rubric TEXT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS assign_text LONGTEXT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS source_label VARCHAR(50) DEFAULT 'text',
-  ADD COLUMN IF NOT EXISTS visibility ENUM('draft','published','closed') DEFAULT 'published',
-  ADD COLUMN IF NOT EXISTS max_attempts INT DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS ai_model VARCHAR(50) DEFAULT 'auto',
-  ADD COLUMN IF NOT EXISTS strictness ENUM('lenient','balanced','strict') DEFAULT 'balanced',
-  ADD COLUMN IF NOT EXISTS feedback_style ENUM('brief','detailed','with_suggestions') DEFAULT 'detailed';
+CREATE TABLE IF NOT EXISTS assignments (
+    id             INT AUTO_INCREMENT PRIMARY KEY,
+    classroom_id   INT NOT NULL,
+    title          VARCHAR(255) NOT NULL,
+    description    TEXT,
+    rubric         TEXT NOT NULL,
+    assign_text    TEXT,
+    source_label   VARCHAR(50)  DEFAULT 'text',
+    due_date       DATE,
+    max_marks      INT          DEFAULT 100,
+    max_attempts   INT          DEFAULT 1,
+    visibility     ENUM('draft','published','closed') DEFAULT 'published',
+    ai_model       VARCHAR(50)  DEFAULT 'auto',
+    strictness     VARCHAR(20)  DEFAULT 'balanced',
+    feedback_style VARCHAR(20)  DEFAULT 'detailed',
+    created_at     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE
+);
 
-ALTER TABLE assignment_submissions
-  ADD COLUMN IF NOT EXISTS ai_feedback LONGTEXT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS teacher_feedback TEXT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS locked TINYINT(1) DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS attempts INT DEFAULT 1,
-  ADD COLUMN IF NOT EXISTS relevance_flags TEXT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS criterion_breakdown LONGTEXT DEFAULT NULL;
-
-ALTER TABLE projects
-  ADD COLUMN IF NOT EXISTS rubric TEXT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS project_details LONGTEXT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS visibility ENUM('draft','published','closed') DEFAULT 'published';
-
-ALTER TABLE project_submissions
-  ADD COLUMN IF NOT EXISTS ai_feedback LONGTEXT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS teacher_feedback TEXT DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS locked TINYINT(1) DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS rejected TINYINT(1) DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS rejection_type VARCHAR(50) DEFAULT NULL;
-
-CREATE TABLE IF NOT EXISTS query_history (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  student_id INT NOT NULL,
-  classroom_id INT NOT NULL,
-  question TEXT NOT NULL,
-  answer LONGTEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS assignment_submissions (
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    assignment_id       INT NOT NULL,
+    student_id          INT NOT NULL,
+    filename            VARCHAR(255),
+    file_path           VARCHAR(600),
+    submitted_text      TEXT,
+    -- AI grading output (LangGraph pipeline: extract→relevance→evaluate→lock)
+    ai_grade            FLOAT,
+    ai_grade_label      VARCHAR(2),
+    -- ai_feedback stores the RAW notebook output:
+    --   CRITERIONBREAKDOWN / SCORE / GRADE / STRENGTHS / WEAKNESSES /
+    --   IMPROVEMENTSUGGESTIONS / DETAILEDFEEDBACK
+    ai_feedback         MEDIUMTEXT,
+    -- Teacher override
+    teacher_grade       FLOAT,
+    teacher_grade_label VARCHAR(2),
+    teacher_feedback    TEXT,
+    -- Lock flag: 1 after LangGraph node_lock fires (no resubmission)
+    locked              TINYINT(1) DEFAULT 0,
+    submitted_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_student_assignment (student_id, assignment_id),
+    FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id)    REFERENCES users(id)
 );

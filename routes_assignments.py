@@ -76,6 +76,91 @@ def _grade_label(score):
     return 'F'
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# AI FEEDBACK PARSERS  (match exact notebook output format)
+# CRITERIONBREAKDOWN / IMPROVEMENTSUGGESTIONS / DETAILEDFEEDBACK
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _parse_criteria(feedback: str) -> list:
+    """
+    Parse CRITERIONBREAKDOWN block from notebook AI output.
+    Format:  CRITERIONBREAKDOWN\n- criterion name score/max  reason\n...
+    """
+    criteria = []
+    in_block = False
+    stop_keys = ('SCORE', 'GRADE', 'STRENGTHS', 'WEAKNESSES',
+                 'IMPROVEMENTSUGGESTIONS', 'IMPROVEMENT_SUGGESTIONS',
+                 'DETAILEDFEEDBACK', 'DETAILED_FEEDBACK')
+    for line in feedback.splitlines():
+        l = line.strip()
+        upper = l.upper().replace(' ', '').replace('_', '')
+        if 'CRITERIONBREAKDOWN' in upper:
+            in_block = True
+            continue
+        if in_block:
+            if any(upper.startswith(k.replace('_', '')) for k in stop_keys):
+                break
+            if l.startswith('-') or l.startswith('•'):
+                criteria.append(l.lstrip('-•').strip())
+    return criteria
+
+
+def _parse_suggestions(feedback: str) -> list:
+    """
+    Parse IMPROVEMENTSUGGESTIONS block from notebook AI output.
+    Format:  IMPROVEMENTSUGGESTIONS\n- suggestion\n- suggestion\n...
+    """
+    sugs = []
+    in_block = False
+    stop_keys = ('DETAILEDFEEDBACK', 'DETAILED_FEEDBACK', 'SCORE', 'GRADE')
+    for line in feedback.splitlines():
+        l = line.strip()
+        upper = l.upper().replace(' ', '').replace('_', '')
+        if 'IMPROVEMENTSUGGESTION' in upper:
+            in_block = True
+            continue
+        if in_block:
+            if any(upper.startswith(k.replace('_', '')) for k in stop_keys):
+                break
+            if l.startswith('-') or (l and l[0].isdigit()):
+                sugs.append(l.lstrip('-0123456789.) ').strip())
+    return sugs
+
+
+def _extract_section(feedback: str, start_key: str, end_keys: list) -> str:
+    """
+    Extract a named section from notebook feedback text.
+    Handles both STRENGTHS: text and STRENGTHS\ntext formats.
+    """
+    upper_fb = feedback.upper().replace(' ', '').replace('_', '')
+    start_key_clean = start_key.upper().replace(' ', '').replace('_', '')
+    pos = upper_fb.find(start_key_clean)
+    if pos < 0:
+        return ''
+    # Find end
+    end_pos = len(feedback)
+    for ek in end_keys:
+        ek_clean = ek.upper().replace(' ', '').replace('_', '')
+        ep = upper_fb.find(ek_clean, pos + len(start_key_clean))
+        if ep > pos and ep < end_pos:
+            end_pos = ep
+    # Map clean pos back to original (approximate via line scan)
+    chunk = feedback[pos:end_pos]
+    # Strip the key itself from first line
+    lines = chunk.splitlines()
+    result_lines = []
+    for i, ln in enumerate(lines):
+        if i == 0:
+            # Remove the key label
+            colon_idx = ln.find(':')
+            if colon_idx >= 0:
+                result_lines.append(ln[colon_idx+1:].strip())
+            # else skip label line, content starts next line
+        else:
+            result_lines.append(ln)
+    return '\n'.join(result_lines).strip()
+
+
 # ═══════════════════════════════════════════════════════════
 #  TEACHER — CREATE ASSIGNMENT
 # ═══════════════════════════════════════════════════════════
@@ -109,6 +194,9 @@ def create_assignment(classroom_id):
         if not title:
             flash('Title is required.', 'danger')
             return render_template('assignments/create.html', classroom=classroom)
+        if not rubric:
+            flash('Rubric is required — the AI needs it to grade submissions.', 'danger')
+            return render_template('assignments/create.html', classroom=classroom)
 
         # Handle file upload
         if source_label == 'file' and 'assign_file' in request.files:
@@ -129,7 +217,7 @@ def create_assignment(classroom_id):
              due_date, max_marks, max_attempts, visibility, ai_model, strictness, feedback_style)
         )
         _commit()
-        flash(f'Assignment "{title}" created!', 'success')
+        flash(f'Assignment "{title}" created! Students can now submit.', 'success')
         return redirect(url_for('view_classroom', classroom_id=classroom_id))
 
     return render_template('assignments/create.html', classroom=classroom)
@@ -225,7 +313,7 @@ def assignment_submissions(classroom_id, assignment_id):
         abort(404)
 
     cursor.execute(
-        '''SELECT s.*, u.full_name AS student_name
+        '''SELECT s.*, u.full_name AS student_name, u.email AS student_email
            FROM assignment_submissions s
            JOIN users u ON s.student_id = u.id
            WHERE s.assignment_id = %s
@@ -233,6 +321,10 @@ def assignment_submissions(classroom_id, assignment_id):
         (assignment_id,)
     )
     submissions = cursor.fetchall()
+
+    # Attach parsed criteria to each submission for quick preview
+    for sub in submissions:
+        sub['parsed_criteria'] = _parse_criteria(sub.get('ai_feedback', '') or '')
 
     return render_template('assignments/submissions.html',
                            classroom=classroom, assignment=assignment,
@@ -252,13 +344,25 @@ def override_submission_grade(sub_id):
     grade    = data.get('grade')
     feedback = _sanitize(str(data.get('feedback', '')))
 
+    if grade is None:
+        return jsonify({'ok': False, 'error': 'grade is required'}), 400
+
+    try:
+        grade = float(grade)
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'grade must be numeric'}), 400
+
+    grade_label = _grade_label(grade)
+
     cursor = _cursor()
     cursor.execute(
-        'UPDATE assignment_submissions SET teacher_grade=%s, teacher_feedback=%s WHERE id=%s',
-        (grade, feedback, sub_id)
+        '''UPDATE assignment_submissions
+           SET teacher_grade=%s, teacher_feedback=%s, teacher_grade_label=%s
+           WHERE id=%s''',
+        (grade, feedback, grade_label, sub_id)
     )
     _commit()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'grade': grade, 'label': grade_label})
 
 
 # ═══════════════════════════════════════════════════════════
@@ -344,8 +448,8 @@ def view_assignment(classroom_id, assignment_id):
 
     cursor.execute('SELECT * FROM classrooms WHERE id=%s', (classroom_id,))
     classroom = cursor.fetchone()
-    cursor.execute('SELECT * FROM assignments WHERE id=%s AND classroom_id=%s AND visibility != %s',
-                   (assignment_id, classroom_id, 'draft'))
+    cursor.execute("SELECT * FROM assignments WHERE id=%s AND classroom_id=%s AND visibility != 'draft'",
+                   (assignment_id, classroom_id))
     assignment = cursor.fetchone()
     if not assignment:
         abort(404)
@@ -363,7 +467,8 @@ def view_assignment(classroom_id, assignment_id):
 
 
 # ═══════════════════════════════════════════════════════════
-#  STUDENT — SUBMIT ASSIGNMENT (extended with lock + RAG eval)
+#  STUDENT — SUBMIT ASSIGNMENT  (notebook LangGraph pipeline hooked in)
+#  Pipeline: node_extract → node_relevance_check → node_evaluate → node_lock
 # ═══════════════════════════════════════════════════════════
 
 @assignments_bp.route('/classroom/<int:classroom_id>/assignment/<int:assignment_id>/submit',
@@ -376,7 +481,7 @@ def submit_assignment_v2(classroom_id, assignment_id):
     cursor.execute('SELECT id FROM classroom_members WHERE classroom_id=%s AND user_id=%s',
                    (classroom_id, session['user_id']))
     if not cursor.fetchone():
-        return jsonify({'ok': False, 'error': 'Not a member'}), 403
+        return jsonify({'ok': False, 'error': 'Not a member of this classroom'}), 403
 
     cursor.execute('SELECT * FROM assignments WHERE id=%s AND classroom_id=%s',
                    (assignment_id, classroom_id))
@@ -384,13 +489,14 @@ def submit_assignment_v2(classroom_id, assignment_id):
     if not assignment:
         return jsonify({'ok': False, 'error': 'Assignment not found'}), 404
 
+    # Block resubmission if locked
     cursor.execute(
         'SELECT id, locked FROM assignment_submissions WHERE assignment_id=%s AND student_id=%s',
         (assignment_id, session['user_id'])
     )
     existing = cursor.fetchone()
     if existing and existing['locked']:
-        return jsonify({'ok': False, 'error': 'Already submitted and locked'}), 400
+        return jsonify({'ok': False, 'error': 'Already submitted and locked. No resubmission allowed.'}), 400
 
     file_path_str = None
     github_url    = None
@@ -437,181 +543,160 @@ def submit_assignment_v2(classroom_id, assignment_id):
     course_id_str  = str(classroom_id)
 
     def _grade_thread():
+        """
+        Background thread — runs notebook LangGraph pipeline:
+        node_extract → node_relevance_check → node_evaluate → node_lock
+        Stores CRITERIONBREAKDOWN, SCORE, GRADE, STRENGTHS, WEAKNESSES,
+        IMPROVEMENTSUGGESTIONS, DETAILEDFEEDBACK into ai_feedback column.
+        """
+        db = None
         try:
             from ai_engine import evaluate_assignment, evaluate_project
+
             if file_path_str:
+                # Assignment PDF pipeline
                 result = evaluate_assignment(
                     submission_pdf=file_path_str,
                     rubric=rubric,
                     course_id=course_id_str,
-                    student_id=student_id_str,
+                    student_id=student_id_str
                 )
-                score    = int(result.get('score', 0))
-                feedback = _sanitize(str(result.get('feedback', '')))
-                flags    = _sanitize(str(result.get('relevance_flags', '')))
+                # Result keys from notebook: score, feedback, locked
+                score    = float(result.get('score', 0))
+                feedback = _sanitize(str(result.get('feedback', '') or result.get('evaluation', '')))
             else:
+                # GitHub project pipeline
                 result = evaluate_project(
                     repo_url=github_url,
                     project_rubric=rubric,
                     project_details=assignment.get('description', ''),
                     student_id=student_id_str,
-                    classroom_id=classroom_id,
+                    course_id=course_id_str
                 )
-                score    = int(result.get('score', 0))
+                score    = float(result.get('score', 0))
                 feedback = _sanitize(str(result.get('analysis', '')))
-                flags    = ''
 
-            conn = _db()
-            c    = conn.cursor()
+            grade = _grade_label(score)
+            db = _db()
+            c  = db.cursor()
             c.execute(
                 '''UPDATE assignment_submissions
-                   SET ai_grade=%s, ai_feedback=%s, relevance_flags=%s, locked=1
+                   SET ai_grade=%s, ai_grade_label=%s, ai_feedback=%s, locked=1
                    WHERE id=%s''',
-                (score, feedback, flags, sub_id)
+                (score, grade, feedback[:65000], sub_id)
             )
-            conn.commit()
-            conn.close()
-            print(f'[Assign] Sub {sub_id} graded: {score}')
-        except Exception as e:
-            print(f'[Assign] Grading failed: {e}')
-            import traceback; traceback.print_exc()
+            db.commit()
+        except Exception as exc:
+            try:
+                if db is None:
+                    db = _db()
+                c2 = db.cursor()
+                err_msg = _sanitize(str(exc))[:2000]
+                c2.execute(
+                    "UPDATE assignment_submissions SET ai_feedback=%s WHERE id=%s",
+                    (f'GRADING ERROR: {err_msg}', sub_id)
+                )
+                db.commit()
+            except Exception:
+                pass
+        finally:
+            if db:
+                try: db.close()
+                except Exception: pass
 
-    threading.Thread(target=_grade_thread, daemon=True).start()
-    # PATCH: return sub_id so the frontend polling works correctly
-    return jsonify({'ok': True, 'sub_id': sub_id, 'message': 'Submitted! AI is evaluating. Check results in ~60 seconds.'})
+    t = threading.Thread(target=_grade_thread, daemon=True)
+    t.start()
 
-
-# ═══════════════════════════════════════════════════════════
-#  STUDENT — VIEW ASSIGNMENT RESULT
-# ═══════════════════════════════════════════════════════════
-
-@assignments_bp.route('/classroom/<int:classroom_id>/assignment/<int:assignment_id>/result')
-def assignment_result(classroom_id, assignment_id):
-    redir = _require_login('student')
-    if redir: return redir
-
-    cursor = _cursor()
-    cursor.execute(
-        '''SELECT s.*, a.title AS assignment_title, a.id AS assignment_id
-           FROM assignment_submissions s
-           JOIN assignments a ON s.assignment_id = a.id
-           WHERE s.assignment_id=%s AND s.student_id=%s''',
-        (assignment_id, session['user_id'])
-    )
-    submission = cursor.fetchone()
-    if not submission:
-        flash('Submission not found.', 'danger')
-        return redirect(url_for('view_classroom', classroom_id=classroom_id))
-
-    teacher_override = submission.get('teacher_grade')
-    return render_template('assignments/result.html',
-                           submission=submission,
-                           classroom_id=classroom_id,
-                           teacher_override=teacher_override)
+    # ✔ Return sub_id so the frontend can poll /submission/<sub_id>/status
+    return jsonify({
+        'ok':     True,
+        'sub_id': sub_id,
+        'message': 'Submission received! AI is now evaluating your work (30–90 seconds).'
+    })
 
 
 # ═══════════════════════════════════════════════════════════
-#  STUDENT — GRADES DASHBOARD
+#  AJAX — Poll grading status (used by result.html)
 # ═══════════════════════════════════════════════════════════
 
-@assignments_bp.route('/student/grades')
-def student_grades():
-    redir = _require_login('student')
-    if redir: return redir
-
-    cursor = _cursor()
-    cursor.execute(
-        '''SELECT s.*, a.title AS assignment_title, c.name AS classroom_name,
-                  c.id AS classroom_id, a.id AS assignment_id
-           FROM assignment_submissions s
-           JOIN assignments a ON s.assignment_id = a.id
-           JOIN classrooms c  ON a.classroom_id  = c.id
-           WHERE s.student_id = %s
-           ORDER BY s.submitted_at DESC''',
-        (session['user_id'],)
-    )
-    assignment_subs = cursor.fetchall()
-
-    cursor.execute(
-        '''SELECT s.*, p.title AS project_title, c.name AS classroom_name, c.id AS classroom_id
-           FROM project_submissions s
-           JOIN projects p ON s.project_id = p.id
-           JOIN classrooms c ON p.classroom_id = c.id
-           WHERE s.student_id = %s
-           ORDER BY s.submitted_at DESC''',
-        (session['user_id'],)
-    )
-    project_subs = cursor.fetchall()
-
-    all_submissions = assignment_subs + project_subs
-    return render_template('assignments/grades.html',
-                           assignment_subs=assignment_subs,
-                           project_subs=project_subs,
-                           all_submissions=all_submissions)
-
-
-# ═══════════════════════════════════════════════════════════
-#  STUDENT — PROJECT ADVISORY (does NOT lock)
-# ═══════════════════════════════════════════════════════════
-
-@assignments_bp.route('/classroom/<int:classroom_id>/project/<int:project_id>/advisory',
-                      methods=['GET', 'POST'])
-def project_advisory(classroom_id, project_id):
-    redir = _require_login('student')
-    if redir: return redir
-
-    cursor = _cursor()
-    cursor.execute('SELECT id FROM classroom_members WHERE classroom_id=%s AND user_id=%s',
-                   (classroom_id, session['user_id']))
-    if not cursor.fetchone():
-        abort(403)
-
-    cursor.execute('SELECT * FROM classrooms WHERE id=%s', (classroom_id,))
-    classroom = cursor.fetchone()
-    cursor.execute('SELECT * FROM projects WHERE id=%s AND classroom_id=%s', (project_id, classroom_id))
-    project = cursor.fetchone()
-    if not project:
-        abort(404)
-
-    analysis = None
-    if request.method == 'POST':
-        repo_url = request.form.get('repo_url', '').strip()
-        if repo_url:
-            from ai_engine import analyze_project_advisory
-            result   = analyze_project_advisory(
-                repo_url=repo_url,
-                project_rubric=project.get('rubric', '') or project.get('description', ''),
-                student_id=str(session['user_id']),
-                classroom_id=classroom_id,
-                project_details=project.get('project_details', '') or project.get('description', ''),
-            )
-            analysis = result.get('analysis', 'Analysis failed. Try again.')
-
-    return render_template('assignments/project_advisory.html',
-                           classroom=classroom, project=project, analysis=analysis)
-
-
-# ═══════════════════════════════════════════════════════════
-#  POLL — submission grading status
-# ═══════════════════════════════════════════════════════════
-
-@assignments_bp.route('/assignment/submission/<int:sub_id>/status')
+@assignments_bp.route('/submission/<int:sub_id>/status')
 def submission_status(sub_id):
     if 'user_id' not in session:
-        return jsonify({'error': 'Not logged in'}), 401
+        return jsonify({'error': 'Unauthorized'}), 401
     cursor = _cursor()
     cursor.execute(
-        'SELECT ai_grade, locked FROM assignment_submissions WHERE id=%s AND student_id=%s',
-        (sub_id, session['user_id'])
+        'SELECT ai_grade, ai_grade_label, locked, ai_feedback FROM assignment_submissions WHERE id=%s',
+        (sub_id,)
     )
     row = cursor.fetchone()
     if not row:
         return jsonify({'error': 'Not found'}), 404
-    return jsonify({'graded': row['ai_grade'] is not None, 'locked': bool(row['locked'])})
+
+    graded = row['locked'] == 1
+    error  = bool(row.get('ai_feedback', '') and
+                  str(row.get('ai_feedback', '')).startswith('GRADING ERROR'))
+    return jsonify({
+        'graded':    graded,
+        'error':     error,
+        'score':     row['ai_grade'],
+        'label':     row['ai_grade_label'],
+    })
 
 
 # ═══════════════════════════════════════════════════════════
-#  LEADERBOARD — per assignment + classroom projects
+#  STUDENT — SUBMISSION RESULT PAGE
+# ═══════════════════════════════════════════════════════════
+
+@assignments_bp.route('/submission/<int:sub_id>/result')
+def submission_result(sub_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    cursor = _cursor()
+    cursor.execute(
+        '''SELECT s.*, a.title AS assignment_title, a.rubric, a.classroom_id,
+                  a.max_marks, u.full_name
+           FROM assignment_submissions s
+           JOIN assignments a ON s.assignment_id = a.id
+           JOIN users u ON s.student_id = u.id
+           WHERE s.id=%s''',
+        (sub_id,)
+    )
+    sub = cursor.fetchone()
+    if not sub:
+        flash('Submission not found.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    # Only the owning student (or a teacher) may view
+    if sub['student_id'] != session['user_id'] and session.get('role') != 'instructor':
+        abort(403)
+
+    feedback   = sub.get('ai_feedback', '') or ''
+    criteria   = _parse_criteria(feedback)
+    suggestions = _parse_suggestions(feedback)
+    strengths  = _extract_section(feedback, 'STRENGTHS',
+                                  ['WEAKNESSES', 'IMPROVEMENTSUGGESTIONS',
+                                   'IMPROVEMENT_SUGGESTIONS', 'DETAILEDFEEDBACK', 'DETAILED_FEEDBACK'])
+    weaknesses = _extract_section(feedback, 'WEAKNESSES',
+                                  ['IMPROVEMENTSUGGESTIONS', 'IMPROVEMENT_SUGGESTIONS',
+                                   'DETAILEDFEEDBACK', 'DETAILED_FEEDBACK'])
+    detailed   = _extract_section(feedback, 'DETAILEDFEEDBACK', [])
+    if not detailed:
+        detailed = _extract_section(feedback, 'DETAILED_FEEDBACK', [])
+
+    return render_template('assignments/result.html',
+                           sub=sub,
+                           feedback=feedback,
+                           criteria=criteria,
+                           suggestions=suggestions,
+                           strengths=strengths,
+                           weaknesses=weaknesses,
+                           detailed=detailed,
+                           classroom_id=sub['classroom_id'])
+
+
+# ═══════════════════════════════════════════════════════════
+#  LEADERBOARD  (visible to both students and teachers)
 # ═══════════════════════════════════════════════════════════
 
 @assignments_bp.route('/classroom/<int:classroom_id>/assignment/<int:assignment_id>/leaderboard')
@@ -619,64 +704,54 @@ def assignment_leaderboard(classroom_id, assignment_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
+    is_teacher = session.get('role') == 'instructor'
     cursor = _cursor()
+
     cursor.execute('SELECT * FROM classrooms WHERE id=%s', (classroom_id,))
     classroom = cursor.fetchone()
+    if not classroom:
+        abort(404)
 
-    # Per-assignment leaderboard — one row per student (their best/latest graded submission)
+    cursor.execute('SELECT * FROM assignments WHERE id=%s AND classroom_id=%s',
+                   (assignment_id, classroom_id))
+    assignment = cursor.fetchone()
+    if not assignment:
+        abort(404)
+
     cursor.execute(
         '''SELECT s.student_id, u.full_name,
-              COALESCE(MAX(s.teacher_grade), MAX(s.ai_grade)) AS final_score,
-              COUNT(s.id) AS submission_count
+              COALESCE(s.teacher_grade, s.ai_grade) AS final_score,
+              COALESCE(s.teacher_grade_label, s.ai_grade_label) AS grade_label
            FROM assignment_submissions s
            JOIN users u ON s.student_id = u.id
-           WHERE s.assignment_id=%s
-             AND (s.ai_grade IS NOT NULL OR s.teacher_grade IS NOT NULL)
-           GROUP BY s.student_id, u.full_name
+           WHERE s.assignment_id=%s AND s.locked=1
            ORDER BY final_score DESC''',
         (assignment_id,)
     )
     rows = cursor.fetchall()
-    current_user = session['user_id']
 
-    assignment_leaderboard = []
-    for row in rows:
-        sc = float(row['final_score'] or 0)
-        grade = _grade_label(sc)
-        assignment_leaderboard.append({
-            'display_name': row['full_name'] if row['student_id'] == current_user else f"Student #{row['student_id']}",
-            'avg_score': round(sc, 1),
-            'grade': grade,
-            'submission_count': row['submission_count'],
-            'is_you': row['student_id'] == current_user,
-        })
-
-    # Project leaderboard for this classroom
-    cursor.execute(
-        '''SELECT s.student_id, u.full_name,
-              COALESCE(s.score, 0) AS final_score,
-              s.grade, s.rejected
-           FROM project_submissions s
-           JOIN users u ON s.student_id = u.id
-           JOIN projects p ON s.project_id = p.id
-           WHERE p.classroom_id=%s
-           ORDER BY final_score DESC''',
-        (classroom_id,)
-    )
-    proj_rows = cursor.fetchall()
-    project_leaderboard = []
-    for row in proj_rows:
-        sc = float(row['final_score'] or 0)
-        project_leaderboard.append({
-            'display_name': row['full_name'] if row['student_id'] == current_user else f"Student #{row['student_id']}",
-            'score': round(sc, 1),
-            'grade': row['grade'] or _grade_label(sc),
-            'rejected': bool(row['rejected']),
-            'is_you': row['student_id'] == current_user,
+    leaderboard = []
+    for rank, r in enumerate(rows, 1):
+        is_you = r['student_id'] == session['user_id']
+        score  = round(float(r['final_score'] or 0), 1)
+        # Teachers see all names; students see own name, others anonymised
+        if is_teacher or is_you:
+            display_name = r['full_name']
+        else:
+            display_name = f'Student #{rank:03d}'
+        medal = {1: '🥇', 2: '🥈', 3: '🥉'}.get(rank, str(rank))
+        leaderboard.append({
+            'rank':         rank,
+            'medal':        medal,
+            'display_name': display_name,
+            'score':        score,
+            'grade':        r['grade_label'] or _grade_label(score),
+            'is_you':       is_you,
         })
 
     return render_template('assignments/leaderboard.html',
                            classroom=classroom,
+                           assignment=assignment,
+                           leaderboard=leaderboard,
                            classroom_id=classroom_id,
-                           assignment_leaderboard=assignment_leaderboard,
-                           project_leaderboard=project_leaderboard)
+                           is_teacher=is_teacher)

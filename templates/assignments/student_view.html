@@ -1,424 +1,294 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% block title %}{{ assignment.title }}{% endblock %}
+
 {% block content %}
+<div class="container py-4" style="max-width:760px">
+
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+      <li class="breadcrumb-item">
+        <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}">{{ classroom.name }}</a>
+      </li>
+      <li class="breadcrumb-item active">{{ assignment.title }}</li>
+    </ol>
+  </nav>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }} alert-dismissible fade show">
+        {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <!-- Assignment header card -->
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-primary text-white">
+      <h5 class="mb-0">&#128203; {{ assignment.title }}</h5>
+    </div>
+    <div class="card-body">
+      {% if assignment.description or assignment.assign_text %}
+        <p class="mb-2">{{ assignment.description or assignment.assign_text }}</p>
+      {% endif %}
+      <div class="d-flex flex-wrap gap-3 text-muted" style="font-size:.875rem">
+        {% if assignment.due_date %}
+          <span>&#128197; Due: <strong>{{ assignment.due_date }}</strong></span>
+        {% endif %}
+        <span>&#127942; Max: <strong>{{ assignment.max_marks }}</strong></span>
+        <span class="badge bg-info text-dark">&#129302; AI Auto-Graded</span>
+      </div>
+
+      {% if assignment.rubric %}
+        <hr>
+        <p class="fw-semibold mb-1" style="font-size:.85rem;text-transform:uppercase;letter-spacing:.04em">
+          Grading Rubric
+        </p>
+        <pre class="bg-light rounded p-3" style="font-size:.83rem;white-space:pre-wrap">{{ assignment.rubric }}</pre>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- If already submitted -->
+  {% if existing_submission %}
+    {% if existing_submission.locked %}
+      <div class="alert alert-success d-flex gap-2">
+        <span style="font-size:1.3rem">&#128274;</span>
+        <div>
+          <strong>Submission Locked.</strong>
+          Your work has been submitted and is locked. No resubmission allowed.
+          {% if existing_submission.ai_grade is not none %}
+            <br>AI Grade: <strong>{{ existing_submission.ai_grade | round(1) }} / {{ assignment.max_marks }}</strong>
+            ({{ existing_submission.ai_grade_label }})
+          {% else %}
+            <br>Grading in progress…
+          {% endif %}
+          <br><a href="{{ url_for('assignments.submission_result', sub_id=existing_submission.id) }}"
+                 class="btn btn-sm btn-outline-success mt-2">View Full Result</a>
+        </div>
+      </div>
+    {% else %}
+      <div class="alert alert-warning">Submission pending grading…
+        <a href="{{ url_for('assignments.submission_result', sub_id=existing_submission.id) }}"
+           class="btn btn-sm btn-outline-warning ms-2">Check Status</a>
+      </div>
+    {% endif %}
+  {% else %}
+    <!-- Submission form -->
+    <div class="card shadow-sm border-0">
+      <div class="card-header fw-semibold">&#128228; Submit Your Work</div>
+      <div class="card-body p-4">
+
+        <!-- One-time lock warning -->
+        <div class="alert alert-warning d-flex gap-2 align-items-start mb-3">
+          <span style="font-size:1.3rem">&#128274;</span>
+          <div>
+            <strong>One submission only.</strong>
+            Once submitted you <em>cannot</em> change or resubmit.
+            The AI will grade and permanently lock your submission.
+          </div>
+        </div>
+
+        <!-- Live AI pipeline stages -->
+        <div class="mb-4">
+          <p class="text-muted fw-semibold mb-2" style="font-size:.8rem;text-transform:uppercase">
+            AI Evaluation Pipeline
+          </p>
+          <div class="d-flex flex-wrap gap-2 align-items-center" id="pipelineStages">
+            <span class="badge bg-light text-dark border px-3 py-2 pipeline-stage" id="ps1">&#128196; Extract</span>
+            <span class="text-muted">&rarr;</span>
+            <span class="badge bg-light text-dark border px-3 py-2 pipeline-stage" id="ps2">&#128269; Relevance</span>
+            <span class="text-muted">&rarr;</span>
+            <span class="badge bg-light text-dark border px-3 py-2 pipeline-stage" id="ps3">&#9878; Grade</span>
+            <span class="text-muted">&rarr;</span>
+            <span class="badge bg-light text-dark border px-3 py-2 pipeline-stage" id="ps4">&#128274; Lock</span>
+          </div>
+        </div>
+
+        <!-- File upload drop zone -->
+        <form id="subForm" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Upload Your Submission</label>
+            <div id="dropZone"
+                 class="border rounded-3 p-4 text-center bg-light"
+                 style="border-style:dashed!important;cursor:pointer"
+                 onclick="document.getElementById('fileInput').click()">
+              <div style="font-size:2.5rem">&#128193;</div>
+              <p class="mb-1 fw-semibold">Drop file here or click to browse</p>
+              <p class="text-muted mb-0" style="font-size:.875rem">PDF, DOC, or DOCX — max 20 MB</p>
+              <input type="file" id="fileInput" name="submission_file"
+                     accept=".pdf,.doc,.docx" class="d-none" required>
+            </div>
+            <div id="filePreview" class="mt-2 d-none">
+              <div class="alert alert-success d-flex align-items-center gap-2 py-2">
+                <span>&#128206;</span>
+                <span id="fileName"></span>
+                <button type="button" class="btn-close ms-auto" onclick="clearFile()"></button>
+              </div>
+            </div>
+          </div>
+
+          <div id="errorBox" class="alert alert-danger d-none"></div>
+
+          <!-- Submit button -->
+          <div id="submitSection">
+            <div class="d-grid">
+              <button type="button" id="submitBtn" class="btn btn-primary btn-lg"
+                      onclick="confirmAndSubmit()">
+                &#128640; Submit for AI Grading
+              </button>
+            </div>
+          </div>
+
+          <!-- Grading progress (shown after submit) -->
+          <div id="gradingProgress" class="d-none text-center py-4">
+            <div class="spinner-border text-primary mb-3" role="status"></div>
+            <h6 id="stageLabel" class="fw-semibold">Sending to AI pipeline…</h6>
+            <div class="progress mt-3" style="height:6px">
+              <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                   style="width:5%"></div>
+            </div>
+            <p class="text-muted mt-2" style="font-size:.85rem">
+              This usually takes 30–90 seconds. Don’t close this tab.
+            </p>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
 <style>
-.nc-assignment-card { border-radius: 12px; border: 1px solid #e0e0e0; }
-.nc-badge-closed { background: #dc3545; }
-.nc-badge-published { background: #198754; }
-.nc-lock-warning { background: linear-gradient(135deg, #fff3cd, #ffeeba); border-left: 4px solid #ffc107; border-radius: 8px; }
-.nc-tab-btn { padding: 0.5rem 1.25rem; border-radius: 8px; border: 2px solid transparent; cursor: pointer; font-weight: 600; transition: all .18s; background: #f8f9fa; color: #495057; }
-.nc-tab-btn.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-.nc-rubric-row td { font-size: .92rem; padding: .45rem .75rem; }
-.nc-submit-btn { min-width: 180px; font-weight: 700; font-size: 1rem; border-radius: 10px; padding: .6rem 1.5rem; }
-.nc-eval-stages { display: flex; gap: 0; border-radius: 10px; overflow: hidden; border: 1px solid #dee2e6; margin-bottom: 1.5rem; }
-.nc-stage { flex: 1; text-align: center; padding: .5rem .25rem; background: #f8f9fa; border-right: 1px solid #dee2e6; font-size: .82rem; color: #6c757d; transition: background .3s, color .3s; }
-.nc-stage:last-child { border-right: none; }
-.nc-stage .stage-icon { font-size: 1.3rem; display: block; margin-bottom: 2px; }
-.nc-stage.active { background: #e7f1ff; color: #0d6efd; font-weight: 600; }
-.nc-stage.done { background: #d1e7dd; color: #0a3622; }
+  .pipeline-stage.active {
+    background: #0d6efd !important;
+    color: #fff !important;
+    border-color: #0d6efd !important;
+  }
 </style>
 
-<div class="container py-4" style="max-width:880px">
-  <!-- Header -->
-  <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
-    <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary btn-sm">← Back to Classroom</a>
-    <h2 class="mb-0 fw-bold">{{ assignment.title }}</h2>
-    <span class="badge {{ 'nc-badge-closed' if assignment.visibility == 'closed' else 'nc-badge-published' }} text-white">
-      {{ assignment.visibility|capitalize }}
-    </span>
-  </div>
-
-  <!-- AI Evaluation Pipeline Banner -->
-  <div class="nc-eval-stages mb-4" id="evalPipeline">
-    <div class="nc-stage" id="stage-extract"><span class="stage-icon">📄</span>1. Extract Text</div>
-    <div class="nc-stage" id="stage-relevance"><span class="stage-icon">🔍</span>2. Relevance Check</div>
-    <div class="nc-stage" id="stage-evaluate"><span class="stage-icon">⚖️</span>3. Rubric Grading</div>
-    <div class="nc-stage" id="stage-lock"><span class="stage-icon">🔒</span>4. Lock & Score</div>
-  </div>
-
-  <!-- Assignment Metadata -->
-  <div class="card nc-assignment-card mb-4 shadow-sm">
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-md-3">
-          <small class="text-muted d-block">📅 Deadline</small>
-          <div class="fw-semibold">
-            {% if assignment.due_date %}
-              {{ assignment.due_date.strftime('%d %b %Y, %H:%M') }}
-              {% if assignment.due_date < now %}<span class="badge bg-danger ms-1">Overdue</span>{% endif %}
-            {% else %}No deadline{% endif %}
-          </div>
-        </div>
-        <div class="col-md-3">
-          <small class="text-muted d-block">🎯 Max Marks</small>
-          <div class="fw-semibold">{{ assignment.max_marks }}</div>
-        </div>
-        <div class="col-md-3">
-          <small class="text-muted d-block">🔁 Attempts</small>
-          <div class="fw-semibold">{{ assignment.max_attempts or 1 }}</div>
-        </div>
-        <div class="col-md-3">
-          <small class="text-muted d-block">🤖 AI Model</small>
-          <div class="fw-semibold">{{ assignment.ai_model|capitalize if assignment.ai_model else 'Auto' }}</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Description -->
-  <div class="card nc-assignment-card mb-4 shadow-sm">
-    <div class="card-header fw-semibold bg-light">📋 Assignment Description</div>
-    <div class="card-body">
-      <div style="white-space:pre-wrap; line-height:1.7">{{ assignment.assign_text or assignment.description or 'No description provided.' }}</div>
-    </div>
-  </div>
-
-  <!-- Rubric -->
-  {% if assignment.rubric %}
-  <div class="card nc-assignment-card mb-4 shadow-sm">
-    <div class="card-header fw-semibold bg-light d-flex justify-content-between">
-      <span>⚖️ Grading Rubric</span>
-      <span class="badge bg-info text-dark">AI uses this to evaluate</span>
-    </div>
-    <div class="card-body p-0">
-      <table class="table table-sm mb-0">
-        <thead class="table-light">
-          <tr><th style="width:70%">Criterion</th><th>Weight</th><th>Status</th></tr>
-        </thead>
-        <tbody>
-        {% for line in assignment.rubric.split('\n') if line.strip() %}
-        {% set parts = line.split(':') %}
-        <tr class="nc-rubric-row">
-          <td>{{ parts[0].strip() }}</td>
-          <td><span class="badge bg-secondary">{{ parts[1].strip() if parts|length > 1 else '—' }}</span></td>
-          <td><span class="badge bg-outline text-muted" style="border:1px solid #dee2e6">Ungraded</span></td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% endif %}
-
-  <!-- AI Evaluation Info Box -->
-  <div class="alert" style="background:#f0f7ff;border:1px solid #b6d4fe;border-radius:10px;">
-    <div class="d-flex gap-2">
-      <div style="font-size:1.5rem">🤖</div>
-      <div>
-        <strong>How AI Evaluation Works</strong>
-        <ul class="mb-0 mt-1 small">
-          <li><strong>Step 1 — Extract:</strong> AI reads your submission (PDF or GitHub repo)</li>
-          <li><strong>Step 2 — Relevance Check:</strong> Verifies submission matches this course &amp; assignment. Off-topic = max 30 marks.</li>
-          <li><strong>Step 3 — Rubric Grade:</strong> Each criterion scored independently. Absent criteria = 0.</li>
-          <li><strong>Step 4 — Lock:</strong> Submission permanently locked. Result shown immediately.</li>
-        </ul>
-        <div class="mt-1 small text-muted">Missing documentation in code = automatic 0 for that criterion.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Submission Section -->
-  <div class="mt-4">
-  {% if existing_submission %}
-    <div class="card nc-assignment-card shadow-sm border-success">
-      <div class="card-header fw-semibold text-success bg-light">✅ Already Submitted</div>
-      <div class="card-body">
-        <div class="row g-2">
-          <div class="col-md-4">
-            <small class="text-muted">Submitted at</small>
-            <div class="fw-semibold">{{ existing_submission.submitted_at.strftime('%d %b %Y, %H:%M') if existing_submission.submitted_at else 'Just now' }}</div>
-          </div>
-          <div class="col-md-4">
-            <small class="text-muted">File/URL</small>
-            <div class="fw-semibold text-truncate" style="max-width:200px">{{ existing_submission.filename or 'GitHub URL' }}</div>
-          </div>
-          <div class="col-md-4">
-            <small class="text-muted">Status</small>
-            <div>
-              {% if existing_submission.locked %}
-                <span class="badge bg-dark">🔒 Locked</span>
-              {% else %}
-                <span class="badge bg-warning text-dark">⏳ Evaluating...</span>
-              {% endif %}
-            </div>
-          </div>
-        </div>
-        <div class="mt-3 d-flex gap-2">
-          <a href="{{ url_for('assignments.assignment_result', classroom_id=classroom.id, assignment_id=assignment.id) }}" class="btn btn-info btn-sm">📊 View Evaluation Result →</a>
-          {% if not existing_submission.locked %}
-          <button class="btn btn-outline-secondary btn-sm" onclick="pollStatus({{ existing_submission.id }})">🔄 Check Grading Status</button>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-
-  {% elif assignment.visibility == 'closed' %}
-    <div class="alert alert-danger" style="border-radius:10px">🚫 This assignment is closed. Submissions are no longer accepted.</div>
-
-  {% elif assignment.due_date and assignment.due_date < now %}
-    <div class="alert alert-warning" style="border-radius:10px">⏰ Deadline has passed. Late submissions may be penalised by the instructor.</div>
-
-  {% else %}
-    <div class="card nc-assignment-card mb-3 shadow-sm">
-      <div class="card-header fw-semibold bg-light">📤 Submit Your Work</div>
-      <div class="card-body">
-        <!-- Lock Warning -->
-        <div class="nc-lock-warning p-3 mb-3">
-          <div class="d-flex gap-2">
-            <span style="font-size:1.3rem">⚠️</span>
-            <div>
-              <strong>Permanent Lock Warning</strong>
-              <p class="mb-0 small mt-1">Once you click <em>Submit &amp; Lock</em>, your submission is <strong>permanently locked</strong>. You cannot edit, resubmit, or withdraw. AI evaluation begins immediately.</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Submission Type Tabs -->
-        <div class="d-flex gap-2 mb-3">
-          <button class="nc-tab-btn active" data-tab="pdf" onclick="switchTab('pdf',this)">📄 Upload PDF / DOCX</button>
-          <button class="nc-tab-btn" data-tab="github" onclick="switchTab('github',this)">🐙 GitHub Repo URL</button>
-        </div>
-
-        <!-- PDF Tab -->
-        <div id="pdfTab">
-          <form id="pdfForm" enctype="multipart/form-data">
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Select File</label>
-              <input type="file" name="submission_file" class="form-control" accept=".pdf,.doc,.docx" required>
-              <div class="form-text">Accepted formats: PDF, DOC, DOCX. Max 20MB.</div>
-            </div>
-            <div class="alert alert-light border small">
-              <strong>AI will:</strong> Extract text → Check relevance to this assignment → Grade against rubric criteria → Lock submission
-            </div>
-            <button type="button" id="submitPdf" class="btn btn-primary nc-submit-btn">🚀 Submit &amp; Lock</button>
-          </form>
-        </div>
-
-        <!-- GitHub Tab -->
-        <div id="githubTab" style="display:none">
-          <div class="mb-3">
-            <label class="form-label fw-semibold">GitHub Repository URL</label>
-            <input type="url" id="githubUrl" class="form-control" placeholder="https://github.com/username/repo-name">
-            <div class="form-text">Repository must be <strong>public</strong>. Private repos cannot be evaluated.</div>
-          </div>
-          <div class="alert alert-light border small mb-3">
-            <strong>AI will:</strong> Clone repo → Check file structure &amp; relevance → Verify actual code exists (not just README/template) → Grade against rubric → Lock submission.
-            <br><span class="text-danger">⚠️ Submitting an unrelated project = automatic Score 0.</span>
-          </div>
-          <button type="button" id="submitGithub" class="btn btn-primary nc-submit-btn">🚀 Submit GitHub &amp; Lock</button>
-        </div>
-      </div>
-    </div>
-  {% endif %}
-  </div>
-</div>
-
-<!-- Confirm Modal -->
-<div class="modal fade" id="confirmModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header bg-warning">
-        <h5 class="modal-title">⚠️ Confirm Permanent Submission</h5>
-      </div>
-      <div class="modal-body">
-        <p>You are about to submit and <strong>permanently lock</strong> your work.</p>
-        <ul class="small">
-          <li>AI evaluation will start immediately</li>
-          <li>You <strong>cannot</strong> edit or resubmit after this</li>
-          <li>Off-topic submissions are automatically capped at 30/100</li>
-          <li>Missing documentation = 0 for that criterion</li>
-        </ul>
-        <p class="mb-0">Are you absolutely sure?</p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-danger fw-bold" id="confirmSubmit">Yes, Submit &amp; Lock</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Loading Overlay -->
-<div id="loadingOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:9999;align-items:center;justify-content:center;">
-  <div class="text-center text-white" style="max-width:480px;padding:2rem">
-    <div class="spinner-border mb-3" style="width:3.5rem;height:3.5rem;border-width:.3em"></div>
-    <h5>AI is evaluating your submission…</h5>
-    <p class="text-white-50 small mb-3">Do not close or refresh this page.</p>
-    <!-- Live pipeline stage indicator -->
-    <div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.2);margin-bottom:1rem">
-      <div id="ov-stage-0" style="flex:1;padding:.4rem .1rem;font-size:.75rem;background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);text-align:center;border-right:1px solid rgba(255,255,255,.1);transition:background .3s,color .3s">📄<br>Extract</div>
-      <div id="ov-stage-1" style="flex:1;padding:.4rem .1rem;font-size:.75rem;background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);text-align:center;border-right:1px solid rgba(255,255,255,.1);transition:background .3s,color .3s">🔍<br>Relevance</div>
-      <div id="ov-stage-2" style="flex:1;padding:.4rem .1rem;font-size:.75rem;background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);text-align:center;border-right:1px solid rgba(255,255,255,.1);transition:background .3s,color .3s">⚖️<br>Grading</div>
-      <div id="ov-stage-3" style="flex:1;padding:.4rem .1rem;font-size:.75rem;background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);text-align:center;transition:background .3s,color .3s">🔒<br>Lock</div>
-    </div>
-    <div id="loadingStage" class="badge bg-info mt-1" style="font-size:.85rem">Starting evaluation…</div>
-    <div id="elapsedTimer" class="text-white-50 small mt-2">0s elapsed</div>
-  </div>
-</div>
-
 <script>
-const cid = {{ classroom.id }};
-const aid = {{ assignment.id }};
-let pendingType = null;
+const fileInput    = document.getElementById('fileInput');
+const filePreview  = document.getElementById('filePreview');
+const fileNameEl   = document.getElementById('fileName');
+const dropZone     = document.getElementById('dropZone');
+const errorBox     = document.getElementById('errorBox');
+const progressBar  = document.getElementById('progressBar');
+const stageLabel   = document.getElementById('stageLabel');
 
-function switchTab(tab, btn) {
-  document.querySelectorAll('.nc-tab-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('pdfTab').style.display = tab === 'pdf' ? 'block' : 'none';
-  document.getElementById('githubTab').style.display = tab === 'github' ? 'block' : 'none';
-}
-
-document.getElementById('submitPdf')?.addEventListener('click', () => {
-  const f = document.querySelector('input[name="submission_file"]');
-  if (!f.value) { alert('Please select a file first.'); return; }
-  pendingType = 'pdf';
-  new bootstrap.Modal(document.getElementById('confirmModal')).show();
-});
-
-document.getElementById('submitGithub')?.addEventListener('click', () => {
-  const url = document.getElementById('githubUrl').value.trim();
-  if (!url) { alert('Please enter a GitHub URL.'); return; }
-  if (!url.startsWith('https://github.com/')) { alert('Please enter a valid GitHub URL (https://github.com/...)'); return; }
-  pendingType = 'github';
-  new bootstrap.Modal(document.getElementById('confirmModal')).show();
-});
-
-// ── Overlay stage helpers ──────────────────────────────────
-const OV_STAGES = ['ov-stage-0','ov-stage-1','ov-stage-2','ov-stage-3'];
-const STAGE_LABELS = ['Extracting text…','Checking relevance…','Grading against rubric…','Locking submission…'];
-
-function setOverlayStage(idx) {
-  OV_STAGES.forEach((id, i) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (i < idx)  { el.style.background='rgba(40,167,69,.35)'; el.style.color='#a3d9a5'; }
-    else if (i === idx) { el.style.background='rgba(13,110,253,.45)'; el.style.color='#fff'; el.style.fontWeight='700'; }
-    else           { el.style.background='rgba(255,255,255,.08)'; el.style.color='rgba(255,255,255,.4)'; el.style.fontWeight='400'; }
-  });
-  const stageEl = document.getElementById('loadingStage');
-  if (stageEl && STAGE_LABELS[idx]) stageEl.textContent = STAGE_LABELS[idx];
-}
-
-// Also animate the pipeline banner at the top of the page
-function setPagePipelineStage(idx) {
-  ['stage-extract','stage-relevance','stage-evaluate','stage-lock'].forEach((id, i) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.classList.remove('active','done');
-    if (i < idx) el.classList.add('done');
-    else if (i === idx) el.classList.add('active');
-  });
-}
-// ─────────────────────────────────────────────────────────
-
-document.getElementById('confirmSubmit')?.addEventListener('click', async () => {
-  bootstrap.Modal.getInstance(document.getElementById('confirmModal')).hide();
-  const overlay = document.getElementById('loadingOverlay');
-  overlay.style.display = 'flex';
-
-  // Start stage 0 immediately
-  let currentStage = 0;
-  setOverlayStage(0);
-  setPagePipelineStage(0);
-
-  // Advance stage every ~18s to match notebook timing
-  const stageInterval = setInterval(() => {
-    if (currentStage < 3) {
-      currentStage++;
-      setOverlayStage(currentStage);
-      setPagePipelineStage(currentStage);
-    }
-  }, 18000);
-
-  // Elapsed timer
-  let elapsed = 0;
-  const timerInterval = setInterval(() => {
-    elapsed += 1;
-    const el = document.getElementById('elapsedTimer');
-    if (el) el.textContent = elapsed + 's elapsed';
-  }, 1000);
-
-  try {
-    let resp;
-    if (pendingType === 'pdf') {
-      const fd = new FormData(document.getElementById('pdfForm'));
-      resp = await fetch(`/classroom/${cid}/assignment/${aid}/submit`, { method: 'POST', body: fd });
-    } else {
-      const url = document.getElementById('githubUrl').value.trim();
-      resp = await fetch(`/classroom/${cid}/assignment/${aid}/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ github_url: url })
-      });
-    }
-    const d = await resp.json();
-
-    if (d.ok && d.sub_id) {
-      // Submission accepted — poll for AI grading completion
-      pollGrading(d.sub_id, stageInterval, timerInterval, overlay);
-    } else if (d.ok) {
-      // Fallback: no sub_id returned (shouldn't happen), go straight to result
-      clearInterval(stageInterval);
-      clearInterval(timerInterval);
-      overlay.style.display = 'none';
-      window.location.href = `/classroom/${cid}/assignment/${aid}/result`;
-    } else {
-      clearInterval(stageInterval);
-      clearInterval(timerInterval);
-      overlay.style.display = 'none';
-      alert('Submission error: ' + (d.error || 'Unknown error'));
-    }
-  } catch (err) {
-    clearInterval(stageInterval);
-    clearInterval(timerInterval);
-    overlay.style.display = 'none';
-    alert('Submission failed: ' + err.message);
+// File picker feedback
+fileInput && fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) {
+    fileNameEl.textContent = fileInput.files[0].name;
+    filePreview.classList.remove('d-none');
   }
 });
 
-async function pollGrading(subId, stageInterval, timerInterval, overlay) {
-  let attempts = 0;
-  const maxAttempts = 60; // up to 3 minutes (every 3s)
-  const pollInterval = setInterval(async () => {
-    attempts++;
-    try {
-      const r = await fetch(`/assignment/submission/${subId}/status`);
-      const data = await r.json();
-      if (data.graded || data.locked) {
-        // Done! mark all stages complete then redirect
-        setOverlayStage(3);
-        setPagePipelineStage(3);
-        clearInterval(pollInterval);
-        clearInterval(stageInterval);
-        clearInterval(timerInterval);
-        setTimeout(() => {
-          overlay.style.display = 'none';
-          window.location.href = `/classroom/${cid}/assignment/${aid}/result`;
-        }, 600);
-      } else if (attempts >= maxAttempts) {
-        clearInterval(pollInterval);
-        clearInterval(stageInterval);
-        clearInterval(timerInterval);
-        overlay.style.display = 'none';
-        window.location.href = `/classroom/${cid}/assignment/${aid}/result`;
-      }
-    } catch(e) {
-      clearInterval(pollInterval);
-      clearInterval(stageInterval);
-      clearInterval(timerInterval);
-      overlay.style.display = 'none';
-      window.location.href = `/classroom/${cid}/assignment/${aid}/result`;
+// Drag-and-drop
+if (dropZone) {
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('border-primary');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('border-primary'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('border-primary');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+      fileNameEl.textContent = file.name;
+      filePreview.classList.remove('d-none');
     }
-  }, 3000);
+  });
 }
 
-async function pollStatus(subId) {
-  const r = await fetch(`/assignment/submission/${subId}/status`);
-  const d = await r.json();
-  if (d.graded) {
-    window.location.href = `/classroom/${cid}/assignment/${aid}/result`;
-  } else {
-    alert('AI is still evaluating. Please wait and check again in a moment.');
+function clearFile() {
+  fileInput.value = '';
+  filePreview.classList.add('d-none');
+}
+
+// Stage animation
+const stageIds    = ['ps1','ps2','ps3','ps4'];
+const stageLabels = ['Extracting text…','Checking relevance…','Grading against rubric…','Locking submission…'];
+const stagePct    = [20, 45, 72, 93];
+let   si          = 0;
+let   stageTimer  = null;
+
+function advanceStage() {
+  stageIds.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', i === si);
+  });
+  if (stageLabel) stageLabel.textContent = stageLabels[si];
+  if (progressBar) progressBar.style.width = stagePct[si] + '%';
+  if (si < stageIds.length - 1) si++;
+}
+
+async function confirmAndSubmit() {
+  errorBox.classList.add('d-none');
+
+  if (!fileInput || !fileInput.files[0]) {
+    errorBox.textContent = 'Please select a PDF, DOC, or DOCX file.';
+    errorBox.classList.remove('d-none');
+    return;
+  }
+
+  if (!confirm('Once submitted you cannot change it. Proceed?')) return;
+
+  // Hide submit button, show progress
+  document.getElementById('submitSection').classList.add('d-none');
+  document.getElementById('gradingProgress').classList.remove('d-none');
+  advanceStage();
+  stageTimer = setInterval(advanceStage, 15000);
+
+  const fd = new FormData();
+  fd.append('submission_file', fileInput.files[0]);
+
+  try {
+    const resp = await fetch(
+      '{{ url_for("assignments.submit_assignment_v2", classroom_id=classroom.id, assignment_id=assignment.id) }}',
+      { method: 'POST', body: fd }
+    );
+    const data = await resp.json();
+
+    if (!data.ok) {
+      clearInterval(stageTimer);
+      document.getElementById('submitSection').classList.remove('d-none');
+      document.getElementById('gradingProgress').classList.add('d-none');
+      errorBox.textContent = data.error || 'Submission failed.';
+      errorBox.classList.remove('d-none');
+      return;
+    }
+
+    // Poll for grading completion
+    const subId = data.sub_id;
+    const pollTimer = setInterval(async () => {
+      try {
+        const sr = await fetch(`/submission/${subId}/status`);
+        const sd = await sr.json();
+        if (sd.graded || sd.error) {
+          clearInterval(pollTimer);
+          clearInterval(stageTimer);
+          // Mark all stages done
+          stageIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('active');
+          });
+          if (progressBar) progressBar.style.width = '100%';
+          if (stageLabel) stageLabel.textContent = 'Grading complete! Redirecting…';
+          setTimeout(() => { window.location.href = `/submission/${subId}/result`; }, 800);
+        }
+      } catch (e) { /* ignore transient errors */ }
+    }, 5000);
+
+  } catch (err) {
+    clearInterval(stageTimer);
+    document.getElementById('submitSection').classList.remove('d-none');
+    document.getElementById('gradingProgress').classList.add('d-none');
+    errorBox.textContent = 'Network error. Please try again.';
+    errorBox.classList.remove('d-none');
   }
 }
 </script>

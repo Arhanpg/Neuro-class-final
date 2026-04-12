@@ -1,201 +1,203 @@
-{% extends 'base.html' %}
-{% block title %}Evaluation Result — {{ submission.assignment_title or 'Assignment' }}{% endblock %}
+{% extends "base.html" %}
+{% block title %}Result — {{ sub.assignment_title }}{% endblock %}
+
 {% block content %}
-<style>
-.nc-score-hero { background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); border-radius: 16px; }
-.nc-grade-circle { width: 100px; height: 100px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.8rem; font-weight: 900; margin: 0 auto 1rem; }
-.nc-criterion-row { display: flex; align-items: center; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid #f0f0f0; }
-.nc-criterion-row:last-child { border-bottom: none; }
-.nc-score-bar-bg { flex: 1; background: #e9ecef; border-radius: 100px; height: 8px; overflow: hidden; }
-.nc-score-bar { height: 100%; border-radius: 100px; transition: width .6s cubic-bezier(.25,.8,.25,1); }
-.nc-section-card { border-radius: 12px; border: 1px solid #e0e0e0; overflow: hidden; margin-bottom: 1rem; }
-.nc-section-card .nc-card-header { padding: .75rem 1.25rem; font-weight: 600; font-size: .95rem; }
-.nc-locked-badge { background: #212529; color: #fff; border-radius: 20px; padding: .2rem .75rem; font-size: .8rem; }
-.nc-pending-pulse { animation: pulse 1.5s infinite; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-</style>
-
 <div class="container py-4" style="max-width:920px">
-  <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
-    <a href="{{ url_for('view_classroom', classroom_id=classroom_id) }}" class="btn btn-outline-secondary btn-sm">← Back to Classroom</a>
-    <h2 class="mb-0 fw-bold">Evaluation Result</h2>
-    {% if submission.assignment_title %}<span class="badge bg-primary">{{ submission.assignment_title }}</span>{% endif %}
-    <a href="{{ url_for('assignments.student_grades') }}" class="btn btn-sm btn-outline-info ms-auto">📊 All My Grades</a>
+
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+      <li class="breadcrumb-item">
+        <a href="{{ url_for('view_classroom', classroom_id=classroom_id) }}">Classroom</a>
+      </li>
+      <li class="breadcrumb-item active">Result</li>
+    </ol>
+  </nav>
+
+  <!-- ── PENDING / GRADING ── -->
+  {% if not sub.locked %}
+  <div class="card border-0 shadow-sm text-center py-5">
+    <div style="font-size:3rem">&#129302;</div>
+    <h4 class="mt-3">AI is Evaluating Your Submission</h4>
+    <p class="text-muted">Usually takes 30–90 seconds. This page refreshes automatically.</p>
+
+    <!-- Live stage badges -->
+    <div class="d-flex justify-content-center gap-2 mt-3 flex-wrap" id="stageRow">
+      <span class="badge px-3 py-2 stage-b" id="sb1">&#128196; Extract</span>
+      <span class="badge px-3 py-2 stage-b" id="sb2">&#128269; Relevance</span>
+      <span class="badge px-3 py-2 stage-b" id="sb3">&#9878; Grade</span>
+      <span class="badge px-3 py-2 stage-b" id="sb4">&#128274; Lock</span>
+    </div>
+
+    <div class="progress mt-4 mx-auto" style="height:6px;max-width:340px">
+      <div id="resultPbar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+           style="width:8%"></div>
+    </div>
   </div>
 
-  {% set score = submission.teacher_grade if submission.teacher_grade is not none else (submission.ai_grade or 0) %}
-  {% set grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F' %}
-  {% set grade_color = {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336'}.get(grade,'#aaa') %}
+  <style>
+    .stage-b { background:#e9ecef; color:#495057; transition:all .4s; }
+    .stage-b.active { background:#0d6efd; color:#fff; }
+  </style>
 
-  <!-- Score Hero Card -->
-  <div class="nc-score-hero p-4 mb-4 text-white text-center">
-    <div class="nc-grade-circle" style="background: {{ grade_color }}20; border: 4px solid {{ grade_color }};">
-      <span style="color: {{ grade_color }}">{{ grade }}</span>
-    </div>
-    <div style="font-size: 3rem; font-weight: 800;">{{ score }}<small style="font-size:1.5rem;opacity:.7">/100</small></div>
-    <div class="mt-1" style="opacity:.7; font-size:.95rem">AI Evaluated</div>
-    <div class="mt-2 d-flex justify-content-center gap-3 flex-wrap">
-      {% if submission.submitted_at %}
-      <span style="opacity:.6; font-size:.85rem">📅 {{ submission.submitted_at.strftime('%d %b %Y, %H:%M') }}</span>
-      {% endif %}
-      {% if submission.locked %}
-      <span class="nc-locked-badge">🔒 Locked</span>
-      {% endif %}
-      {% if submission.filename %}
-      <span style="opacity:.6; font-size:.85rem">📄 {{ submission.filename }}</span>
-      {% endif %}
-    </div>
-    {% if teacher_override is not none %}
-    <div class="mt-3 p-2" style="background:rgba(255,193,7,.15);border-radius:8px;border:1px solid rgba(255,193,7,.4)">
-      <span style="color:#ffc107">👨‍🏫 Teacher Override: <strong>{{ teacher_override }}/100</strong></span>
-    </div>
-    {% endif %}
-  </div>
+  <script>
+    const sbs  = ['sb1','sb2','sb3','sb4'];
+    const pcts = [20, 48, 74, 96];
+    let si2 = 0;
+    const bar2 = document.getElementById('resultPbar');
 
-  {% if not submission.ai_feedback and not submission.ai_grade %}
-  <!-- Still Evaluating -->
-  <div class="text-center py-5">
-    <div class="nc-pending-pulse" style="font-size:3rem">🤖</div>
-    <h5 class="mt-3">AI Evaluation in Progress...</h5>
-    <p class="text-muted">Running: Extract → Relevance Check → Rubric Grading → Lock</p>
-    <p class="text-muted small">This usually takes 30–90 seconds.</p>
-    <button class="btn btn-primary" onclick="location.reload()">🔄 Refresh to Check</button>
-    <script>
-      // Auto-refresh every 10 seconds while pending
-      setTimeout(() => location.reload(), 10000);
-    </script>
-  </div>
+    const stgInt = setInterval(() => {
+      sbs.forEach((id, i) => document.getElementById(id)
+        .classList.toggle('active', i === si2));
+      bar2.style.width = pcts[si2] + '%';
+      if (si2 < sbs.length - 1) si2++;
+    }, 14000);
+
+    // Poll every 5 s
+    setInterval(async () => {
+      try {
+        const r = await fetch('{{ url_for("assignments.submission_status", sub_id=sub.id) }}');
+        const d = await r.json();
+        if (d.graded || d.error) {
+          clearInterval(stgInt);
+          sbs.forEach(id => document.getElementById(id).classList.add('active'));
+          bar2.style.width = '100%';
+          window.location.reload();
+        }
+      } catch(e){}
+    }, 5000);
+  </script>
 
   {% else %}
-  {% set feedback = submission.ai_feedback or '' %}
+  <!-- ── GRADED ── -->
+  {% set final_score = sub.teacher_grade if sub.teacher_grade is not none else sub.ai_grade %}
+  {% set final_label = sub.teacher_grade_label if sub.teacher_grade_label else sub.ai_grade_label %}
 
-  <!-- Criterion Breakdown —
-       Handles both CRITERION_BREAKDOWN: (with space) and CRITERIONBREAKDOWN (no space/colon)
-  -->
-  {% if 'CRITERION_BREAKDOWN:' in feedback or 'CRITERIONBREAKDOWN' in feedback %}
-  <div class="nc-section-card shadow-sm">
-    <div class="nc-card-header bg-light">📊 Criterion Breakdown</div>
-    <div class="card-body">
-      {%- if 'CRITERION_BREAKDOWN:' in feedback %}
-        {%- set breakdown_raw = feedback.split('CRITERION_BREAKDOWN:')[1] %}
-      {%- elif 'CRITERIONBREAKDOWN:' in feedback %}
-        {%- set breakdown_raw = feedback.split('CRITERIONBREAKDOWN:')[1] %}
-      {%- else %}
-        {%- set breakdown_raw = feedback.split('CRITERIONBREAKDOWN')[1] %}
-      {%- endif %}
-      {%- set breakdown_text = breakdown_raw.split('\n\nSCORE:')[0].split('\nSCORE:')[0].split('SCORE:')[0].split('\n\nSTRENGTHS')[0].split('STRENGTHS:')[0] %}
-      {% for line in breakdown_text.split('\n') if line.strip() and ('-' in line or ':' in line) %}
-      {% set line_clean = line.strip().lstrip('- ') %}
-      {% set parts = line_clean.split(':') %}
-      <div class="nc-criterion-row">
-        <div style="width:190px;flex-shrink:0;font-size:.9rem;font-weight:600">{{ parts[0].strip() if parts|length > 0 else line_clean }}</div>
-        {% if parts|length > 1 %}
-        {% set score_part = parts[1].strip() %}
-        {% set score_nums = score_part.split('/') %}
-        {% if score_nums|length >= 2 %}
-        {% set earned = score_nums[0].strip()|float(0) %}
-        {% set total_pts = score_nums[1].strip().split(' ')[0]|float(100) %}
-        {% set pct = (earned / total_pts * 100) if total_pts > 0 else 0 %}
-        <div class="nc-score-bar-bg">
-          <div class="nc-score-bar" style="width:{{ pct|round }}%;background:{{ '#4CAF50' if pct >= 70 else '#FFC107' if pct >= 40 else '#f44336' }}"></div>
-        </div>
-        <span style="font-size:.85rem;min-width:70px;text-align:right;font-weight:600">{{ score_part.split(' ')[0] }}</span>
-        {% else %}
-        <span class="text-muted small">{{ score_part[:80] }}</span>
-        {% endif %}
-        {% else %}
-        <span class="text-muted small">{{ line_clean[:100] }}</span>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
+  <div class="row g-4">
 
-  <!-- Strengths & Weaknesses -->
-  <div class="row g-3 mb-3">
-    <div class="col-md-6">
-      <div class="nc-section-card shadow-sm h-100">
-        <div class="nc-card-header" style="background:#d1e7dd;color:#0a3622">💪 Strengths</div>
-        <div class="card-body small" style="white-space:pre-wrap">
-          {% if 'STRENGTHS:' in feedback %}{{ feedback.split('STRENGTHS:')[1].split('WEAKNESSES:')[0].split('WEAKNESSES')[0].strip() }}
-          {% elif 'STRENGTHS' in feedback %}{{ feedback.split('STRENGTHS')[1].split('WEAKNESSES')[0].lstrip(':').strip()[:600] }}
-          {% else %}—{% endif %}
+    <!-- LEFT: Score card -->
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm h-100 text-center">
+        <div class="card-body d-flex flex-column justify-content-center py-4">
+
+          {% if sub.teacher_grade is not none %}
+            <span class="badge bg-warning text-dark mb-2">&#128104;&#8205;&#127979; Teacher Override</span>
+          {% else %}
+            <span class="badge bg-info text-dark mb-2">&#129302; AI Graded</span>
+          {% endif %}
+
+          <div class="mt-1" style="font-size:4rem;font-weight:800;line-height:1
+            {% if final_score >= 90 %};color:#198754
+            {% elif final_score >= 70 %};color:#0d6efd
+            {% elif final_score >= 50 %};color:#ffc107
+            {% else %};color:#dc3545{% endif %}">{{ final_label or '?' }}</div>
+
+          <div class="mt-2 fw-semibold text-muted">
+            {{ (final_score or 0)|round(1) }} / {{ sub.max_marks }}
+          </div>
+
+          {% if sub.teacher_grade is not none and sub.teacher_feedback %}
+            <div class="mt-2 text-muted fst-italic" style="font-size:.85rem">
+              &#128172; {{ sub.teacher_feedback }}
+            </div>
+          {% endif %}
+
+          {% if sub.teacher_grade is not none %}
+            <div class="mt-1 text-muted" style="font-size:.8rem">
+              AI Grade: {{ (sub.ai_grade or 0)|round(1) }}
+            </div>
+          {% endif %}
+
+          <a href="{{ url_for('assignments.assignment_leaderboard',
+                              classroom_id=classroom_id,
+                              assignment_id=sub.assignment_id) }}"
+             class="btn btn-outline-warning btn-sm mt-3">&#127942; Leaderboard</a>
         </div>
       </div>
     </div>
-    <div class="col-md-6">
-      <div class="nc-section-card shadow-sm h-100">
-        <div class="nc-card-header" style="background:#f8d7da;color:#58151c">⚠️ Weaknesses</div>
-        <div class="card-body small" style="white-space:pre-wrap">
-          {% if 'WEAKNESSES:' in feedback %}{{ feedback.split('WEAKNESSES:')[1].split('IMPROVEMENT_SUGGESTIONS:')[0].split('IMPROVEMENTSUGGESTIONS')[0].split('IMPROVEMENT')[0].strip() }}
-          {% elif 'WEAKNESSES' in feedback %}{{ feedback.split('WEAKNESSES')[1].split('IMPROVEMENT')[0].lstrip(':').strip()[:600] }}
-          {% else %}—{% endif %}
+
+    <!-- RIGHT: Feedback panels -->
+    <div class="col-md-8">
+
+      <!-- Criterion Breakdown -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header fw-semibold">&#128202; Criterion Breakdown</div>
+        <div class="card-body">
+          {% if criteria %}
+            <ul class="list-unstyled mb-0">
+              {% for c in criteria %}
+                <li class="d-flex align-items-start gap-2 mb-2">
+                  <span class="text-success mt-1" style="font-size:.9rem">&#10003;</span>
+                  <span style="font-size:.9rem">{{ c }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-muted mb-0 fst-italic" style="font-size:.9rem">
+              No criterion breakdown available.
+            </p>
+          {% endif %}
         </div>
       </div>
+
+      <!-- Strengths + Weaknesses -->
+      {% if strengths or weaknesses %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+          <div class="row">
+            {% if strengths %}
+            <div class="col-md-6">
+              <p class="fw-semibold text-success mb-1">&#9989; Strengths</p>
+              <p style="font-size:.875rem;white-space:pre-line">{{ strengths[:600] }}</p>
+            </div>
+            {% endif %}
+            {% if weaknesses %}
+            <div class="col-md-6">
+              <p class="fw-semibold text-danger mb-1">&#9888; Weaknesses</p>
+              <p style="font-size:.875rem;white-space:pre-line">{{ weaknesses[:600] }}</p>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Improvement Suggestions -->
+      {% if suggestions %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header fw-semibold">&#128161; Improvement Suggestions</div>
+        <div class="card-body">
+          <ol class="mb-0 ps-3">
+            {% for s in suggestions %}
+              <li class="mb-1" style="font-size:.9rem">{{ s }}</li>
+            {% endfor %}
+          </ol>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Detailed Feedback -->
+      {% if detailed %}
+      <div class="card border-0 shadow-sm">
+        <div class="card-header fw-semibold">&#128221; Detailed Feedback</div>
+        <div class="card-body">
+          <p style="font-size:.9rem;white-space:pre-line">{{ detailed[:2000] }}</p>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Raw feedback fallback -->
+      {% if not criteria and not strengths and not suggestions and not detailed and feedback %}
+      <div class="card border-0 shadow-sm">
+        <div class="card-header fw-semibold">&#129302; AI Feedback</div>
+        <div class="card-body">
+          <pre style="font-size:.85rem;white-space:pre-wrap">{{ feedback[:3000] }}</pre>
+        </div>
+      </div>
+      {% endif %}
+
     </div>
   </div>
-
-  <!-- Improvement Suggestions -->
-  {% set has_suggestions = 'IMPROVEMENT_SUGGESTIONS:' in feedback or 'IMPROVEMENTSUGGESTIONS' in feedback or 'IMPROVEMENT_SUGGESTIONS' in feedback %}
-  {% if has_suggestions %}
-  <div class="nc-section-card shadow-sm mb-3">
-    <div class="nc-card-header" style="background:#fff3cd;color:#664d03">🚀 Improvement Suggestions</div>
-    <div class="card-body">
-      {%- if 'IMPROVEMENT_SUGGESTIONS:' in feedback %}
-        {%- set imp_raw = feedback.split('IMPROVEMENT_SUGGESTIONS:')[1] %}
-      {%- elif 'IMPROVEMENTSUGGESTIONS:' in feedback %}
-        {%- set imp_raw = feedback.split('IMPROVEMENTSUGGESTIONS:')[1] %}
-      {%- else %}
-        {%- set imp_raw = feedback.split('IMPROVEMENT_SUGGESTIONS')[1].lstrip(':') %}
-      {%- endif %}
-      {% set imp_text = imp_raw.split('DETAILED_FEEDBACK:')[0].split('DETAILEDFEEDBACK')[0].strip() %}
-      <ul class="mb-0 small">
-      {% for line in imp_text.split('\n') if line.strip() %}
-        <li class="mb-1">{{ line.strip().lstrip('- •123456789.').strip() }}</li>
-      {% endfor %}
-      </ul>
-    </div>
-  </div>
   {% endif %}
-
-  <!-- Detailed Feedback -->
-  {% set has_detail = 'DETAILED_FEEDBACK:' in feedback or 'DETAILEDFEEDBACK' in feedback %}
-  {% if has_detail %}
-  <div class="nc-section-card shadow-sm mb-3">
-    <div class="nc-card-header bg-light">📄 Detailed Feedback</div>
-    <div class="card-body small" style="white-space:pre-wrap; line-height:1.7">
-      {% if 'DETAILED_FEEDBACK:' in feedback %}{{ feedback.split('DETAILED_FEEDBACK:')[1].strip() }}
-      {% else %}{{ feedback.split('DETAILEDFEEDBACK')[1].lstrip(':').strip() }}{% endif %}
-    </div>
-  </div>
-  {% endif %}
-
-  <!-- Raw feedback fallback if no structure detected -->
-  {% if not has_suggestions and 'CRITERION_BREAKDOWN:' not in feedback and 'CRITERIONBREAKDOWN' not in feedback and 'STRENGTHS:' not in feedback and 'STRENGTHS' not in feedback %}
-  <div class="nc-section-card shadow-sm mb-3">
-    <div class="nc-card-header bg-light">📋 AI Feedback</div>
-    <div class="card-body small" style="white-space:pre-wrap; line-height:1.7">{{ feedback }}</div>
-  </div>
-  {% endif %}
-
-  <!-- Relevance Flags -->
-  {% if submission.relevance_flags %}
-  <div class="alert alert-warning" style="border-radius:10px">
-    <strong>🔍 Relevance Check Notes:</strong><br>
-    <pre class="mb-0 small" style="white-space:pre-wrap">{{ submission.relevance_flags }}</pre>
-  </div>
-  {% endif %}
-
-  {% endif %}
-
-  <!-- Actions -->
-  <div class="d-flex gap-2 mt-3 flex-wrap">
-    <a href="{{ url_for('view_classroom', classroom_id=classroom_id) }}" class="btn btn-outline-secondary btn-sm">← Back to Classroom</a>
-    <a href="{{ url_for('assignments.student_grades') }}" class="btn btn-outline-info btn-sm">📊 View All Grades</a>
-    {% if submission.assignment_id %}
-    <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=classroom_id, assignment_id=submission.assignment_id) }}" class="btn btn-outline-warning btn-sm">🏆 Leaderboard</a>
-    {% endif %}
-  </div>
 </div>
 {% endblock %}
