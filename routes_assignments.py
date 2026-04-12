@@ -24,6 +24,10 @@ assignments_bp = Blueprint('assignments', __name__)
 
 ALLOWED_EXT = {'pdf', 'doc', 'docx'}
 
+# ─── cached set of known-missing columns so we only probe once per app start ──
+_missing_columns = set()   # e.g. {'visibility', 'rubric', 'assign_text', ...}
+_columns_probed  = False
+
 
 def _db():
     """Open a fresh MySQL connection (used inside background threads)."""
@@ -46,6 +50,14 @@ def _cursor():
 def _commit():
     from app import mysql
     mysql.connection.commit()
+
+
+def _rollback_safe():
+    try:
+        from app import mysql
+        mysql.connection.rollback()
+    except Exception:
+        pass
 
 
 def _allowed(filename):
@@ -74,6 +86,75 @@ def _grade_label(score):
     if score >= 70: return 'C'
     if score >= 60: return 'D'
     return 'F'
+
+
+# ─── Probe which columns actually exist in the assignments table ──────────────
+
+def _probe_assignment_columns():
+    """
+    Check the DB schema once and cache which optional columns are missing.
+    Optional columns: visibility, rubric, assign_text, source_label,
+                      ai_model, strictness, feedback_style, max_attempts
+    """
+    global _columns_probed, _missing_columns
+    if _columns_probed:
+        return
+
+    optional = ['visibility', 'rubric', 'assign_text', 'source_label',
+                'ai_model', 'strictness', 'feedback_style', 'max_attempts']
+    try:
+        c = _cursor()
+        c.execute("SHOW COLUMNS FROM assignments")
+        existing = {row['Field'] for row in c.fetchall()}
+        _missing_columns = set(optional) - existing
+    except Exception:
+        _missing_columns = set()   # if probe fails, try with all columns
+    _columns_probed = True
+
+
+def _has_col(col: str) -> bool:
+    _probe_assignment_columns()
+    return col not in _missing_columns
+
+
+# ─── ADD missing columns automatically (best-effort, runs at first request) ──
+
+def _ensure_assignment_columns():
+    """
+    Auto-ADD any missing optional columns so the app self-heals.
+    Runs once per process startup.
+    """
+    _probe_assignment_columns()
+    if not _missing_columns:
+        return
+
+    add_map = {
+        'visibility':     "VARCHAR(20) NOT NULL DEFAULT 'published'",
+        'rubric':         "TEXT NULL",
+        'assign_text':    "TEXT NULL",
+        'source_label':   "VARCHAR(20) NULL DEFAULT 'text'",
+        'ai_model':       "VARCHAR(50) NULL DEFAULT 'auto'",
+        'strictness':     "VARCHAR(20) NULL DEFAULT 'balanced'",
+        'feedback_style': "VARCHAR(20) NULL DEFAULT 'detailed'",
+        'max_attempts':   "INT NOT NULL DEFAULT 1",
+    }
+    try:
+        c = _cursor()
+        for col in list(_missing_columns):
+            if col in add_map:
+                try:
+                    c.execute(f"ALTER TABLE assignments ADD COLUMN `{col}` {add_map[col]}")
+                    _commit()
+                    _missing_columns.discard(col)
+                except MySQLdb.OperationalError as e:
+                    if '1060' in str(e):   # Duplicate column — already exists
+                        _missing_columns.discard(col)
+    except Exception:
+        pass
+    # Re-probe after additions
+    global _columns_probed
+    _columns_probed = False
+    _probe_assignment_columns()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -165,6 +246,9 @@ def create_assignment(classroom_id):
     redir = _require_login('instructor')
     if redir: return redir
 
+    # Self-heal: add missing columns if needed
+    _ensure_assignment_columns()
+
     cursor = _cursor()
     cursor.execute('SELECT * FROM classrooms WHERE id=%s AND instructor_id=%s',
                    (classroom_id, session['user_id']))
@@ -194,7 +278,6 @@ def create_assignment(classroom_id):
             return render_template('assignments/create.html', classroom=classroom)
 
         # Merge rubric into description so the AI can read it later
-        # Format: "RUBRIC:\n<rubric>\n\nASSIGNMENT:\n<assign_text>"
         description = f"RUBRIC:\n{rubric}\n\nASSIGNMENT:\n{assign_text}"
 
         # Handle file upload
@@ -208,46 +291,38 @@ def create_assignment(classroom_id):
                 assign_text = f'[FILE: {fn}]'
                 description = f"RUBRIC:\n{rubric}\n\nASSIGNMENT:\n{assign_text}"
 
-        # Check which columns exist in the assignments table and insert accordingly
-        try:
-            # Try with rubric column first (if it exists in the DB)
-            cursor.execute(
-                '''INSERT INTO assignments
-                   (classroom_id, title, description, rubric, assign_text, source_label,
-                    due_date, max_marks, max_attempts, visibility, ai_model, strictness, feedback_style)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-                (classroom_id, title, description, rubric, assign_text, source_label,
-                 due_date, max_marks, max_attempts, visibility, ai_model, strictness, feedback_style)
-            )
-        except MySQLdb.OperationalError as e:
-            if 'rubric' in str(e).lower() or '1054' in str(e):
-                # rubric column doesn't exist — insert without it
-                _rollback_safe()
-                cursor2 = _cursor()
-                cursor2.execute(
-                    '''INSERT INTO assignments
-                       (classroom_id, title, description, assign_text, source_label,
-                        due_date, max_marks, max_attempts, visibility)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-                    (classroom_id, title, description, assign_text, source_label,
-                     due_date, max_marks, max_attempts, visibility)
-                )
-            else:
-                raise
+        # ── Build INSERT dynamically based on which columns actually exist ──
+        cols   = ['classroom_id', 'title', 'description', 'due_date', 'max_marks']
+        vals   = [classroom_id,   title,   description,   due_date,   max_marks]
 
+        if _has_col('rubric'):
+            cols.append('rubric');         vals.append(rubric)
+        if _has_col('assign_text'):
+            cols.append('assign_text');    vals.append(assign_text)
+        if _has_col('source_label'):
+            cols.append('source_label');   vals.append(source_label)
+        if _has_col('ai_model'):
+            cols.append('ai_model');       vals.append(ai_model)
+        if _has_col('strictness'):
+            cols.append('strictness');     vals.append(strictness)
+        if _has_col('feedback_style'):
+            cols.append('feedback_style'); vals.append(feedback_style)
+        if _has_col('max_attempts'):
+            cols.append('max_attempts');   vals.append(max_attempts)
+        if _has_col('visibility'):
+            cols.append('visibility');     vals.append(visibility)
+
+        placeholders = ', '.join(['%s'] * len(cols))
+        col_list     = ', '.join(f'`{c}`' for c in cols)
+        sql = f"INSERT INTO assignments ({col_list}) VALUES ({placeholders})"
+
+        cursor.execute(sql, vals)
         _commit()
+
         flash(f'Assignment "{title}" created! Students can now submit.', 'success')
         return redirect(url_for('view_classroom', classroom_id=classroom_id))
 
     return render_template('assignments/create.html', classroom=classroom)
-
-
-def _rollback_safe():
-    try:
-        from app import mysql
-        mysql.connection.rollback()
-    except Exception:
-        pass
 
 
 # ═══════════════════════════════════════════════════════════
@@ -259,6 +334,8 @@ def _rollback_safe():
 def edit_assignment(classroom_id, assignment_id):
     redir = _require_login('instructor')
     if redir: return redir
+
+    _ensure_assignment_columns()
 
     cursor = _cursor()
     cursor.execute('SELECT * FROM classrooms WHERE id=%s AND instructor_id=%s',
@@ -283,27 +360,24 @@ def edit_assignment(classroom_id, assignment_id):
         assign_text  = _sanitize(request.form.get('assign_text', ''))
         description  = f"RUBRIC:\n{rubric}\n\nASSIGNMENT:\n{assign_text}"
 
-        try:
-            cursor.execute(
-                '''UPDATE assignments SET title=%s, description=%s, rubric=%s, assign_text=%s,
-                   due_date=%s, max_marks=%s, max_attempts=%s, visibility=%s WHERE id=%s''',
-                (title, description, rubric, assign_text, due_date,
-                 max_marks, max_attempts, visibility, assignment_id)
-            )
-        except MySQLdb.OperationalError as e:
-            if 'rubric' in str(e).lower() or '1054' in str(e):
-                _rollback_safe()
-                cursor2 = _cursor()
-                cursor2.execute(
-                    '''UPDATE assignments SET title=%s, description=%s, assign_text=%s,
-                       due_date=%s, max_marks=%s, max_attempts=%s, visibility=%s WHERE id=%s''',
-                    (title, description, assign_text, due_date,
-                     max_marks, max_attempts, visibility, assignment_id)
-                )
-            else:
-                raise
+        # ── Build UPDATE dynamically ──
+        set_parts = ['title=%s', 'description=%s', 'due_date=%s', 'max_marks=%s']
+        set_vals  = [title,      description,       due_date,      max_marks]
 
+        if _has_col('rubric'):
+            set_parts.append('rubric=%s');         set_vals.append(rubric)
+        if _has_col('assign_text'):
+            set_parts.append('assign_text=%s');    set_vals.append(assign_text)
+        if _has_col('max_attempts'):
+            set_parts.append('max_attempts=%s');   set_vals.append(max_attempts)
+        if _has_col('visibility'):
+            set_parts.append('visibility=%s');     set_vals.append(visibility)
+
+        set_vals.append(assignment_id)
+        sql = f"UPDATE assignments SET {', '.join(set_parts)} WHERE id=%s"
+        cursor.execute(sql, set_vals)
         _commit()
+
         flash('Assignment updated.', 'success')
         return redirect(url_for('view_classroom', classroom_id=classroom_id))
 
@@ -311,7 +385,7 @@ def edit_assignment(classroom_id, assignment_id):
 
 
 # ═══════════════════════════════════════════════════════════
-#  TEACHER — DELETE ASSIGNMENT (soft delete)
+#  TEACHER — DELETE ASSIGNMENT (soft delete / close)
 # ═══════════════════════════════════════════════════════════
 
 @assignments_bp.route('/classroom/<int:classroom_id>/assignment/<int:assignment_id>/delete',
@@ -326,8 +400,13 @@ def delete_assignment(classroom_id, assignment_id):
     if not cursor.fetchone():
         return jsonify({'ok': False}), 403
 
-    cursor.execute("UPDATE assignments SET visibility='closed' WHERE id=%s AND classroom_id=%s",
-                   (assignment_id, classroom_id))
+    if _has_col('visibility'):
+        cursor.execute("UPDATE assignments SET visibility='closed' WHERE id=%s AND classroom_id=%s",
+                       (assignment_id, classroom_id))
+    else:
+        # Fallback: hard delete if no visibility column
+        cursor.execute("DELETE FROM assignments WHERE id=%s AND classroom_id=%s",
+                       (assignment_id, classroom_id))
     _commit()
     return jsonify({'ok': True})
 
@@ -492,8 +571,18 @@ def view_assignment(classroom_id, assignment_id):
 
     cursor.execute('SELECT * FROM classrooms WHERE id=%s', (classroom_id,))
     classroom = cursor.fetchone()
-    cursor.execute("SELECT * FROM assignments WHERE id=%s AND classroom_id=%s AND visibility != 'draft'",
-                   (assignment_id, classroom_id))
+
+    # Use visibility filter only if column exists
+    if _has_col('visibility'):
+        cursor.execute(
+            "SELECT * FROM assignments WHERE id=%s AND classroom_id=%s AND visibility != 'draft'",
+            (assignment_id, classroom_id)
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM assignments WHERE id=%s AND classroom_id=%s",
+            (assignment_id, classroom_id)
+        )
     assignment = cursor.fetchone()
     if not assignment:
         abort(404)
@@ -575,7 +664,6 @@ def submit_assignment_v2(classroom_id, assignment_id):
     # Extract rubric — try dedicated column, fall back to description field
     raw_desc = assignment.get('description', '') or ''
     if 'RUBRIC:' in raw_desc.upper():
-        # Parse out just the RUBRIC section from merged description
         rubric_extracted = raw_desc.split('ASSIGNMENT:')[0].replace('RUBRIC:', '').strip()
     else:
         rubric_extracted = assignment.get('rubric', '') or raw_desc
