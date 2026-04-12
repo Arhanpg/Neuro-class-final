@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block title %}My Grades{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{{ url_for('student_dashboard') }}" class="btn btn-outline-secondary btn-sm">← Dashboard</a>
+    <h2 class="mb-0">📊 My Grades</h2>
+  </div>
+
+  {% if not all_submissions %}
+  <div class="text-center py-5 text-muted">
+    <div style="font-size:3rem">📭</div>
+    <p>No submissions yet. Submit assignments to see grades here.</p>
+  </div>
+  {% else %}
+
+  <!-- Assignment grades -->
+  {% if assignment_subs %}
+  <h5 class="mb-3">📝 Assignments</h5>
+  <div class="row g-3 mb-4">
+  {% for s in assignment_subs %}
+  {% set final = s.teacher_grade if s.teacher_grade is not none else s.ai_grade %}
+  {% set grade = 'A' if final and final >= 90 else 'B' if final and final >= 80 else 'C' if final and final >= 70 else 'D' if final and final >= 60 else 'F' if final is not none else '?' %}
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <h6 class="mb-1">{{ s.assignment_title }}</h6>
+            <small class="text-muted">{{ s.classroom_name }} · {{ s.submitted_at.strftime('%d %b %Y') if s.submitted_at else '' }}</small>
+          </div>
+          <div class="text-center">
+            <div style="font-size:2rem;font-weight:800;color:{{ {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336','?':'#9e9e9e'}.get(grade,'#9e9e9e') }}">{{ grade }}</div>
+            <small>{{ final or '—' }}/100</small>
+          </div>
+        </div>
+        {% if s.locked %}<span class="badge bg-dark mt-2">🔒 Locked</span>{% endif %}
+        {% if final is not none %}
+        <a href="/classroom/{{ s.classroom_id }}/assignment/{{ s.assignment_id }}/result" class="btn btn-sm btn-outline-info mt-2">View Feedback</a>
+        {% else %}
+        <span class="badge bg-warning text-dark mt-2">⏳ Grading in progress</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Project grades -->
+  {% if project_subs %}
+  <h5 class="mb-3">🔬 Projects</h5>
+  <div class="row g-3">
+  {% for s in project_subs %}
+  {% set final = s.teacher_grade if s.teacher_grade is not none else s.ai_grade %}
+  {% set grade = 'A' if final and final >= 90 else 'B' if final and final >= 80 else 'C' if final and final >= 70 else 'D' if final and final >= 60 else 'F' if final is not none else '?' %}
+  <div class="col-md-6">
+    <div class="card shadow-sm h-100 {{ 'border-danger' if s.rejected else '' }}">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <h6 class="mb-1">{{ s.project_title }}</h6>
+            <small class="text-muted">{{ s.classroom_name }} · {{ s.submitted_at.strftime('%d %b %Y') if s.submitted_at else '' }}</small>
+            {% if s.rejected %}<div><span class="badge bg-danger">❌ Rejected</span></div>{% endif %}
+          </div>
+          <div class="text-center">
+            <div style="font-size:2rem;font-weight:800;color:{{ {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336','?':'#9e9e9e'}.get(grade,'#9e9e9e') }}">{{ grade }}</div>
+            <small>{{ final or '—' }}/100</small>
+          </div>
+        </div>
+        {% if s.locked %}<span class="badge bg-dark mt-2">🔒 Locked</span>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

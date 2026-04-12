@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}Project Advisory — {{ project.title }}{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:900px">
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary btn-sm">← Back</a>
+    <h2 class="mb-0">🔍 Project Advisory</h2>
+    <span class="badge bg-info">Advisory Mode</span>
+  </div>
+
+  <div class="alert alert-info">ℹ️ This is <strong>advisory only</strong>. Your submission is NOT locked. Use this to improve before final submission.</div>
+
+  {% if not analysis %}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header fw-semibold">📋 {{ project.title }}</div>
+    <div class="card-body">
+      <p class="text-muted">{{ project.description or 'No description.' }}</p>
+      <form method="POST">
+        <div class="mb-3">
+          <label class="form-label">Your GitHub Repository URL</label>
+          <input type="url" name="repo_url" class="form-control" placeholder="https://github.com/username/repo" required>
+        </div>
+        <button type="submit" class="btn btn-primary" id="analyzeBtn">
+          🤖 Analyze My Project
+        </button>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  {% set a = analysis %}
+
+  <!-- Completion percentage -->
+  {% set pct = 0 %}
+  {% if 'COMPLETION_PERCENTAGE:' in a %}
+    {% set pct = a.split('COMPLETION_PERCENTAGE:')[1].split('\n')[0].strip()|int %}
+  {% endif %}
+  <div class="card mb-4 shadow-sm">
+    <div class="card-body">
+      <div class="d-flex justify-content-between mb-2">
+        <strong>Completion</strong><strong>{{ pct }}%</strong>
+      </div>
+      <div class="progress" style="height:24px">
+        <div class="progress-bar {{ 'bg-success' if pct >= 70 else 'bg-warning' if pct >= 40 else 'bg-danger' }}"
+          style="width:{{ pct }}%">{{ pct }}%</div>
+      </div>
+    </div>
+  </div>
+
+  {% if 'ESTIMATED_GRADE_IF_SUBMITTED_NOW:' in a %}
+  <div class="alert alert-secondary">
+    📊 <strong>Estimated Grade If Submitted Now:</strong>
+    {{ a.split('ESTIMATED_GRADE_IF_SUBMITTED_NOW:')[1].split('\n')[0].strip() }}
+  </div>
+  {% endif %}
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-6">
+      <div class="card shadow-sm border-success h-100">
+        <div class="card-header fw-semibold text-success">✅ What's Done Well</div>
+        <div class="card-body small"><pre style="white-space:pre-wrap">{% if 'WHAT_IS_DONE_WELL:' in a %}{{ a.split('WHAT_IS_DONE_WELL:')[1].split('WHAT_IS_MISSING:')[0].strip() }}{% else %}—{% endif %}</pre></div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card shadow-sm border-warning h-100">
+        <div class="card-header fw-semibold text-warning">⚠️ What's Missing</div>
+        <div class="card-body small"><pre style="white-space:pre-wrap">{% if 'WHAT_IS_MISSING:' in a %}{{ a.split('WHAT_IS_MISSING:')[1].split('NEXT_STEPS:')[0].strip() }}{% else %}—{% endif %}</pre></div>
+      </div>
+    </div>
+  </div>
+
+  {% if 'NEXT_STEPS:' in a %}
+  <div class="card mb-3 shadow-sm">
+    <div class="card-header fw-semibold">🚀 Next Steps</div>
+    <div class="card-body small"><pre style="white-space:pre-wrap">{{ a.split('NEXT_STEPS:')[1].split('ESTIMATED_GRADE')[0].strip() }}</pre></div>
+  </div>
+  {% endif %}
+
+  <div class="d-flex gap-2">
+    <form method="POST"><button type="submit" class="btn btn-outline-primary">🔄 Re-Analyze</button></form>
+    <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-success">Submit Final →</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

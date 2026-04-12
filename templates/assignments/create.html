@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+{% block title %}Create Assignment{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:860px">
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary btn-sm">← Back</a>
+    <h2 class="mb-0">Create Assignment</h2>
+    <span class="badge bg-primary">{{ classroom.name }}</span>
+  </div>
+
+  <form id="createForm" method="POST" enctype="multipart/form-data">
+    <!-- Basic Info -->
+    <div class="card mb-4 shadow-sm">
+      <div class="card-header fw-semibold">📋 Assignment Details</div>
+      <div class="card-body">
+        <div class="mb-3">
+          <label class="form-label">Title <span class="text-danger">*</span></label>
+          <input type="text" name="title" class="form-control" required placeholder="e.g. Week 3: Neural Networks Assignment">
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Deadline</label>
+            <input type="datetime-local" name="due_date" class="form-control">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Max Marks</label>
+            <input type="number" name="max_marks" class="form-control" value="100" min="1" max="1000">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Max Attempts</label>
+            <select name="max_attempts" class="form-select">
+              {% for i in range(1,6) %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="row g-3 mt-1">
+          <div class="col-md-6">
+            <label class="form-label">Visibility</label>
+            <select name="visibility" class="form-select">
+              <option value="draft">Draft (hidden from students)</option>
+              <option value="published" selected>Published</option>
+              <option value="closed">Closed (no new submissions)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="card mb-4 shadow-sm">
+      <div class="card-header fw-semibold">📝 Assignment Content</div>
+      <div class="card-body">
+        <div class="mb-3">
+          <label class="form-label">Content Source</label>
+          <div class="btn-group w-100" role="group">
+            <input type="radio" class="btn-check" name="source_label" id="src_text" value="text" checked>
+            <label class="btn btn-outline-primary" for="src_text">✍️ Rich Text Editor</label>
+            <input type="radio" class="btn-check" name="source_label" id="src_file" value="file">
+            <label class="btn btn-outline-primary" for="src_file">📎 Upload PDF/DOCX</label>
+          </div>
+        </div>
+        <div id="textEditor">
+          <textarea name="assign_text" class="form-control" rows="8" placeholder="Write your assignment description, problem statement, instructions..."></textarea>
+        </div>
+        <div id="fileUpload" style="display:none">
+          <input type="file" name="assign_file" class="form-control" accept=".pdf,.doc,.docx">
+          <small class="text-muted">Accepted: PDF, DOC, DOCX</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rubric Builder -->
+    <div class="card mb-4 shadow-sm">
+      <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+        <span>⚖️ Rubric Builder</span>
+        <span id="weightTotal" class="badge bg-secondary">Total: 0%</span>
+      </div>
+      <div class="card-body">
+        <div id="rubricRows">
+          <div class="row g-2 mb-2 rubric-row">
+            <div class="col-7"><input type="text" name="rubric_criterion[]" class="form-control" placeholder="Criterion name (e.g. Code Quality)"></div>
+            <div class="col-3"><input type="number" name="rubric_weight[]" class="form-control weight-input" placeholder="Weight %" min="1" max="100"></div>
+            <div class="col-2"><button type="button" class="btn btn-outline-danger btn-sm w-100 remove-row">✕</button></div>
+          </div>
+        </div>
+        <button type="button" id="addCriterion" class="btn btn-outline-secondary btn-sm mt-2">+ Add Criterion</button>
+        <div id="weightError" class="text-danger mt-2" style="display:none">⚠️ Weights must sum to 100%</div>
+        <textarea name="rubric" id="rubricHidden" style="display:none"></textarea>
+      </div>
+    </div>
+
+    <!-- AI Settings -->
+    <div class="card mb-4 shadow-sm">
+      <div class="card-header fw-semibold">🤖 AI Evaluation Settings</div>
+      <div class="card-body row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Model Preference</label>
+          <select name="ai_model" class="form-select">
+            <option value="auto">Auto (Fallback chain)</option>
+            <option value="gemini">Gemini 2.0 Flash</option>
+            <option value="openrouter">OpenRouter Llama-3.3-70B</option>
+            <option value="groq">Groq Llama-3.3-70B</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Strictness</label>
+          <select name="strictness" class="form-select">
+            <option value="lenient">Lenient</option>
+            <option value="balanced" selected>Balanced</option>
+            <option value="strict">Strict</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Feedback Style</label>
+          <select name="feedback_style" class="form-select">
+            <option value="brief">Brief</option>
+            <option value="detailed" selected>Detailed</option>
+            <option value="with_suggestions">With Suggestions</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary px-5">✅ Create Assignment</button>
+      <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+// Source toggle
+document.querySelectorAll('input[name="source_label"]').forEach(r => {
+  r.addEventListener('change', () => {
+    document.getElementById('textEditor').style.display = r.value === 'text' ? 'block' : 'none';
+    document.getElementById('fileUpload').style.display = r.value === 'file' ? 'block' : 'none';
+  });
+});
+
+// Rubric builder
+document.getElementById('addCriterion').addEventListener('click', () => {
+  const row = document.querySelector('.rubric-row').cloneNode(true);
+  row.querySelectorAll('input').forEach(i => i.value = '');
+  document.getElementById('rubricRows').appendChild(row);
+  updateWeights();
+});
+document.getElementById('rubricRows').addEventListener('click', e => {
+  if (e.target.classList.contains('remove-row')) {
+    if (document.querySelectorAll('.rubric-row').length > 1)
+      e.target.closest('.rubric-row').remove();
+    updateWeights();
+  }
+});
+document.getElementById('rubricRows').addEventListener('input', updateWeights);
+
+function updateWeights() {
+  let total = 0;
+  document.querySelectorAll('.weight-input').forEach(i => total += parseInt(i.value||0));
+  const badge = document.getElementById('weightTotal');
+  badge.textContent = 'Total: ' + total + '%';
+  badge.className = 'badge ' + (total === 100 ? 'bg-success' : total > 100 ? 'bg-danger' : 'bg-secondary');
+  document.getElementById('weightError').style.display = (total !== 100 && total > 0) ? 'block' : 'none';
+}
+
+// Build rubric text on submit
+document.getElementById('createForm').addEventListener('submit', function(e) {
+  const criteria = document.querySelectorAll('input[name="rubric_criterion[]"]');
+  const weights  = document.querySelectorAll('input[name="rubric_weight[]"]');
+  let total = 0, parts = [];
+  criteria.forEach((c, i) => {
+    const w = parseInt(weights[i].value||0);
+    if (c.value.trim()) { parts.push(c.value.trim() + ': ' + w + '%'); total += w; }
+  });
+  if (parts.length > 0 && total !== 100) {
+    e.preventDefault();
+    document.getElementById('weightError').style.display = 'block';
+    return;
+  }
+  document.getElementById('rubricHidden').value = parts.join('\n');
+});
+</script>
+{% endblock %}

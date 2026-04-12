@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% block title %}Submissions — {{ assignment.title }}{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+    <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary btn-sm">← Back</a>
+    <h2 class="mb-0">Submissions</h2>
+    <span class="badge bg-primary">{{ assignment.title }}</span>
+    <span class="badge bg-secondary">{{ submissions|length }} total</span>
+  </div>
+
+  <!-- Filter tabs -->
+  <ul class="nav nav-tabs mb-3" id="subTabs">
+    <li class="nav-item"><a class="nav-link active" data-filter="all" href="#">All</a></li>
+    <li class="nav-item"><a class="nav-link" data-filter="graded" href="#">Graded</a></li>
+    <li class="nav-item"><a class="nav-link" data-filter="ungraded" href="#">Pending</a></li>
+    <li class="nav-item"><a class="nav-link" data-filter="locked" href="#">Locked</a></li>
+  </ul>
+
+  {% if submissions %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle" id="subsTable">
+      <thead class="table-dark">
+        <tr>
+          <th>#</th><th>Student</th><th>Submitted</th>
+          <th>AI Score</th><th>Teacher Override</th>
+          <th>Grade</th><th>Status</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for s in submissions %}
+      {% set final = s.teacher_grade if s.teacher_grade is not none else s.ai_grade %}
+      {% set grade_label = 'A' if final and final >= 90 else 'B' if final and final >= 80 else 'C' if final and final >= 70 else 'D' if final and final >= 60 else 'F' if final is not none else '—' %}
+      <tr data-graded="{{ 'yes' if final is not none else 'no' }}"
+          data-locked="{{ 'yes' if s.locked else 'no' }}">
+        <td>{{ loop.index }}</td>
+        <td><strong>{{ s.student_name }}</strong></td>
+        <td class="text-muted small">{{ s.submitted_at.strftime('%d %b %Y %H:%M') if s.submitted_at else '—' }}</td>
+        <td>
+          {% if s.ai_grade is not none %}
+            <span class="badge {{ 'bg-success' if s.ai_grade >= 70 else 'bg-warning text-dark' if s.ai_grade >= 50 else 'bg-danger' }}">{{ s.ai_grade }}</span>
+          {% else %}<span class="text-muted">Pending...</span>{% endif %}
+        </td>
+        <td>
+          <div class="d-flex gap-2">
+            <input type="number" class="form-control form-control-sm override-input"
+              value="{{ s.teacher_grade or '' }}" min="0" max="{{ assignment.max_marks }}"
+              style="width:80px" placeholder="—" data-sub-id="{{ s.id }}">
+            <button class="btn btn-sm btn-outline-primary save-override" data-sub-id="{{ s.id }}">Save</button>
+          </div>
+        </td>
+        <td>
+          <span class="badge {{ {'A':'bg-success','B':'bg-info','C':'bg-warning text-dark','D':'bg-orange','F':'bg-danger'}.get(grade_label,'bg-secondary') }}">{{ grade_label }}</span>
+        </td>
+        <td>
+          {% if s.locked %}<span class="badge bg-dark">🔒 Locked</span>
+          {% else %}<span class="badge bg-secondary">Open</span>{% endif %}
+        </td>
+        <td>
+          <button class="btn btn-sm btn-outline-info view-feedback" data-feedback="{{ (s.ai_feedback or 'No feedback yet')|e }}" data-student="{{ s.student_name }}">View Feedback</button>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-5 text-muted">
+    <div style="font-size:3rem">📭</div>
+    <p>No submissions yet.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Feedback Modal -->
+<div class="modal fade" id="feedbackModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Feedback — <span id="fbStudentName"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body"><pre id="fbContent" class="small" style="white-space:pre-wrap"></pre></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Filter tabs
+document.querySelectorAll('[data-filter]').forEach(tab => {
+  tab.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelectorAll('[data-filter]').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const f = tab.dataset.filter;
+    document.querySelectorAll('#subsTable tbody tr').forEach(row => {
+      row.style.display = f === 'all' ||
+        (f === 'graded' && row.dataset.graded === 'yes') ||
+        (f === 'ungraded' && row.dataset.graded === 'no') ||
+        (f === 'locked' && row.dataset.locked === 'yes') ? '' : 'none';
+    });
+  });
+});
+
+// Override grade
+document.querySelectorAll('.save-override').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.subId;
+    const val = document.querySelector(`.override-input[data-sub-id="${id}"]`).value;
+    fetch(`/assignment/submission/${id}/override`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({grade: parseInt(val), feedback: ''})
+    }).then(r => r.json()).then(d => {
+      if (d.ok) btn.textContent = '✓ Saved';
+      setTimeout(() => btn.textContent = 'Save', 2000);
+    });
+  });
+});
+
+// View feedback
+document.querySelectorAll('.view-feedback').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('fbStudentName').textContent = btn.dataset.student;
+    document.getElementById('fbContent').textContent = btn.dataset.feedback;
+    new bootstrap.Modal(document.getElementById('feedbackModal')).show();
+  });
+});
+</script>
+{% endblock %}

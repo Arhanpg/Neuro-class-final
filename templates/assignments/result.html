@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}Evaluation Result{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:900px">
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <a href="{{ url_for('view_classroom', classroom_id=classroom_id) }}" class="btn btn-outline-secondary btn-sm">← Back</a>
+    <h2 class="mb-0">Evaluation Result</h2>
+  </div>
+
+  <!-- Score card -->
+  {% set score = submission.ai_grade or 0 %}
+  {% set grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F' %}
+  {% set grade_color = {'A':'success','B':'info','C':'warning','D':'orange','F':'danger'}.get(grade,'secondary') %}
+
+  <div class="card mb-4 shadow border-0" style="background: linear-gradient(135deg, #1a1a2e, #16213e)">
+    <div class="card-body text-center text-white py-5">
+      <div style="font-size:5rem; font-weight:800; color: {{ {'A':'#4CAF50','B':'#00BCD4','C':'#FFC107','D':'#FF9800','F':'#f44336'}.get(grade,'white') }}">{{ grade }}</div>
+      <div style="font-size:2.5rem; font-weight:600;">{{ score }}/100</div>
+      <div class="mt-2 text-white-50">AI Evaluated · {{ submission.submitted_at.strftime('%d %b %Y') if submission.submitted_at else '' }}</div>
+      {% if submission.locked %}
+      <div class="mt-2"><span class="badge bg-dark">🔒 Submission Locked</span></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Feedback breakdown -->
+  {% if submission.ai_feedback %}
+  {% set feedback = submission.ai_feedback %}
+
+  <div class="card mb-3 shadow-sm">
+    <div class="card-header fw-semibold">📊 Criterion Breakdown</div>
+    <div class="card-body">
+      <pre class="small" style="white-space:pre-wrap">{% if 'CRITERION_BREAKDOWN' in feedback %}{{ feedback.split('CRITERION_BREAKDOWN:')[1].split('\n\nSCORE:')[0] if 'SCORE:' in feedback else feedback.split('CRITERION_BREAKDOWN:')[1][:1000] }}{% else %}{{ feedback[:500] }}{% endif %}</pre>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100 border-success">
+        <div class="card-header fw-semibold text-success">💪 Strengths</div>
+        <div class="card-body small"><pre style="white-space:pre-wrap">{% if 'STRENGTHS:' in feedback %}{{ feedback.split('STRENGTHS:')[1].split('WEAKNESSES:')[0].strip() }}{% else %}—{% endif %}</pre></div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100 border-danger">
+        <div class="card-header fw-semibold text-danger">⚠️ Weaknesses</div>
+        <div class="card-body small"><pre style="white-space:pre-wrap">{% if 'WEAKNESSES:' in feedback %}{{ feedback.split('WEAKNESSES:')[1].split('IMPROVEMENT_SUGGESTIONS:')[0].strip() }}{% else %}—{% endif %}</pre></div>
+      </div>
+    </div>
+  </div>
+
+  {% if 'IMPROVEMENT_SUGGESTIONS:' in feedback %}
+  <div class="card mb-3 shadow-sm">
+    <div class="card-header fw-semibold">🚀 Improvement Suggestions</div>
+    <div class="card-body small"><pre style="white-space:pre-wrap">{{ feedback.split('IMPROVEMENT_SUGGESTIONS:')[1].split('DETAILED_FEEDBACK:')[0].strip() }}</pre></div>
+  </div>
+  {% endif %}
+
+  {% if 'DETAILED_FEEDBACK:' in feedback %}
+  <div class="card mb-3 shadow-sm">
+    <div class="card-header fw-semibold">📄 Detailed Feedback</div>
+    <div class="card-body small"><pre style="white-space:pre-wrap">{{ feedback.split('DETAILED_FEEDBACK:')[1].strip() }}</pre></div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="alert alert-info">⏳ AI evaluation in progress. Please refresh in a moment.</div>
+  {% endif %}
+
+  {% if teacher_override is not none %}
+  <div class="alert alert-warning">👨‍🏫 Teacher override: <strong>{{ teacher_override }}/100</strong></div>
+  {% endif %}
+</div>
+{% endblock %}
