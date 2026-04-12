@@ -39,6 +39,52 @@
 .delete-btn { background:none; border:none; cursor:pointer; color:var(--color-text-faint); font-size:1rem; padding:var(--space-1) var(--space-2); border-radius:var(--radius-sm); transition:color var(--transition-interactive), background var(--transition-interactive); flex-shrink:0; }
 .delete-btn:hover { color:var(--color-error); background:var(--color-error-highlight); }
 
+/* ── Assignments ──────────────────────────────────────────────────────────── */
+.assignment-card {
+  border:1px solid var(--color-border);
+  border-radius:var(--radius-lg);
+  background:var(--color-surface);
+  overflow:hidden;
+  margin-bottom:var(--space-4);
+  transition:box-shadow var(--transition-interactive);
+}
+.assignment-card:hover { box-shadow:var(--shadow-md); }
+.assignment-card-header {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  padding:var(--space-4) var(--space-5);
+  border-bottom:1px solid var(--color-border);
+  gap:var(--space-3);
+  flex-wrap:wrap;
+}
+.assignment-title { font-size:var(--text-base); font-weight:700; color:var(--color-text); margin:0; }
+.assignment-meta { display:flex; gap:var(--space-3); flex-wrap:wrap; padding:var(--space-3) var(--space-5); background:var(--color-surface-offset); font-size:var(--text-xs); color:var(--color-text-muted); }
+.assignment-meta span { display:flex; align-items:center; gap:4px; }
+.assignment-body { padding:var(--space-4) var(--space-5); font-size:var(--text-sm); color:var(--color-text-muted); line-height:1.7; }
+.assignment-footer { display:flex; align-items:center; justify-content:space-between; padding:var(--space-3) var(--space-5); border-top:1px solid var(--color-border); gap:var(--space-2); flex-wrap:wrap; }
+.badge-status-published { background:var(--color-success-highlight); color:var(--color-success); }
+.badge-status-draft { background:var(--color-warning-highlight); color:var(--color-warning); }
+.badge-status-closed { background:var(--color-surface-dynamic); color:var(--color-text-muted); }
+
+/* ── Teacher Submissions Inline ──────────────────────────────────────────── */
+.sub-expand-area { display:none; padding:var(--space-4) var(--space-5); border-top:1px solid var(--color-border); background:var(--color-surface-2); }
+.sub-expand-area.open { display:block; }
+.sub-table { width:100%; border-collapse:collapse; font-size:var(--text-xs); }
+.sub-table th { padding:var(--space-2) var(--space-3); background:var(--color-surface-offset); color:var(--color-text-muted); text-align:left; font-weight:600; }
+.sub-table td { padding:var(--space-2) var(--space-3); border-top:1px solid var(--color-border); vertical-align:middle; }
+.grade-badge { display:inline-block; padding:2px 8px; border-radius:var(--radius-full); font-weight:700; font-size:0.75rem; }
+.grade-A { background:#d4edda; color:#155724; }
+.grade-B { background:#cce5ff; color:#004085; }
+.grade-C { background:#fff3cd; color:#856404; }
+.grade-D { background:#ffe5d0; color:#7d4000; }
+.grade-F { background:#f8d7da; color:#721c24; }
+.grade-pending { background:var(--color-surface-dynamic); color:var(--color-text-muted); }
+.override-wrap { display:flex; gap:4px; align-items:center; }
+.override-input { width:70px; padding:3px 6px; border:1px solid var(--color-border); border-radius:var(--radius-sm); font-size:var(--text-xs); background:var(--color-bg); color:var(--color-text); }
+.btn-save-grade { padding:3px 10px; border-radius:var(--radius-sm); background:var(--color-primary); color:#fff; border:none; cursor:pointer; font-size:var(--text-xs); font-weight:600; transition:background var(--transition-interactive); }
+.btn-save-grade:hover { background:var(--color-primary-hover); }
+
 /* ── PDF Modal ─────────────────────────────────────────────────────────────── */
 .pdf-modal-overlay { display:none; position:fixed; inset:0; z-index:2000; background:oklch(0 0 0 / 0.7); align-items:center; justify-content:center; padding:var(--space-4); }
 .pdf-modal-overlay.open { display:flex; }
@@ -47,14 +93,27 @@
 .pdf-modal-title { font-weight:600; font-size:var(--text-sm); color:var(--color-text); }
 .pdf-modal-close { background:none; border:none; cursor:pointer; color:var(--color-text-muted); font-size:1.4rem; line-height:1; padding:var(--space-1); border-radius:var(--radius-sm); transition:color var(--transition-interactive); }
 .pdf-modal-close:hover { color:var(--color-text); }
-.pdf-modal-toolbar { display:flex; align-items:center; gap:var(--space-3); padding:var(--space-2) var(--space-5); border-bottom:1px solid var(--color-border); background:var(--color-surface-offset); flex-shrink:0; flex-wrap:wrap; }
-.pdf-modal-toolbar .tool-btn { padding:var(--space-1) var(--space-3); border-radius:var(--radius-sm); border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text); font-size:var(--text-xs); cursor:pointer; transition:background var(--transition-interactive); }
-.pdf-modal-toolbar .tool-btn:hover { background:var(--color-surface-dynamic); }
-.pdf-modal-toolbar .page-info { font-size:var(--text-xs); color:var(--color-text-muted); margin-left:auto; }
 .pdf-embed-wrap { flex:1; overflow:hidden; position:relative; }
 .pdf-embed-wrap iframe { width:100%; height:100%; border:none; display:block; }
-.pdf-fallback { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--space-4); padding:var(--space-12); color:var(--color-text-muted); text-align:center; }
-.pdf-fallback p { font-size:var(--text-sm); max-width:40ch; }
+
+/* ── Upload Submit Modal ──────────────────────────────────────────────────── */
+.modal-overlay { display:none; position:fixed; inset:0; z-index:3000; background:oklch(0 0 0 / 0.6); align-items:center; justify-content:center; padding:var(--space-4); }
+.modal-overlay.open { display:flex; }
+.modal-box { background:var(--color-surface); border-radius:var(--radius-xl); padding:var(--space-8); width:100%; max-width:520px; box-shadow:var(--shadow-lg); position:relative; }
+.modal-box h3 { font-size:var(--text-lg); font-weight:700; margin-bottom:var(--space-4); }
+.modal-close { position:absolute; top:var(--space-4); right:var(--space-4); background:none; border:none; cursor:pointer; font-size:1.4rem; color:var(--color-text-muted); }
+.file-drop-zone { border:2px dashed var(--color-border); border-radius:var(--radius-lg); padding:var(--space-8) var(--space-4); text-align:center; color:var(--color-text-muted); font-size:var(--text-sm); cursor:pointer; transition:border-color var(--transition-interactive), background var(--transition-interactive); }
+.file-drop-zone:hover, .file-drop-zone.dragover { border-color:var(--color-primary); background:var(--color-primary-highlight); }
+.file-drop-zone input[type=file] { display:none; }
+.file-name-display { margin-top:var(--space-2); font-size:var(--text-xs); color:var(--color-primary); font-weight:500; min-height:1.2em; }
+.btn-submit-assignment { width:100%; padding:var(--space-3); border-radius:var(--radius-md); background:var(--color-primary); color:#fff; border:none; cursor:pointer; font-size:var(--text-base); font-weight:700; margin-top:var(--space-4); transition:background var(--transition-interactive); }
+.btn-submit-assignment:hover { background:var(--color-primary-hover); }
+.btn-submit-assignment:disabled { opacity:0.6; cursor:not-allowed; }
+.submit-progress { display:none; margin-top:var(--space-3); }
+.nc-stage-row { display:flex; gap:var(--space-2); margin-top:var(--space-3); flex-wrap:wrap; }
+.nc-stage-pill { padding:3px 10px; border-radius:var(--radius-full); background:var(--color-surface-offset); color:var(--color-text-muted); font-size:var(--text-xs); font-weight:500; border:1px solid var(--color-border); transition:all 0.3s; }
+.nc-stage-pill.active { background:var(--color-primary); color:#fff; border-color:var(--color-primary); }
+.nc-stage-pill.done { background:var(--color-success-highlight); color:var(--color-success); border-color:var(--color-success); }
 </style>
 {% endblock %}
 
@@ -139,6 +198,164 @@
         {% endif %}
       </div>
 
+      <!-- ════════════════════════════════════════════════════════
+           ASSIGNMENTS SECTION
+      ════════════════════════════════════════════════════════ -->
+      <div class="card" style="margin-top:var(--space-6)">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--space-2)">
+          <h2>📝 Assignments</h2>
+          {% if session.role == 'instructor' %}
+          <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
+            <a href="{{ url_for('assignments.create_assignment', classroom_id=classroom.id) }}" class="btn btn-primary btn-sm">+ Create Assignment</a>
+            <a href="{{ url_for('assignments.classroom_analytics', classroom_id=classroom.id) }}" class="btn btn-secondary btn-sm">📈 Analytics</a>
+          </div>
+          {% endif %}
+        </div>
+
+        {% if assignments %}
+          {% for a in assignments %}
+          {% if session.role == 'instructor' or a.visibility == 'published' %}
+          <div class="assignment-card" id="asgn-{{ a.id }}">
+            <div class="assignment-card-header">
+              <div>
+                <h3 class="assignment-title">{{ a.title }}</h3>
+              </div>
+              <div style="display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap">
+                <span class="badge badge-status-{{ a.visibility or 'published' }}">{{ (a.visibility or 'published')|capitalize }}</span>
+                {% if session.role == 'instructor' %}
+                <a href="{{ url_for('assignments.edit_assignment', classroom_id=classroom.id, assignment_id=a.id) }}" class="btn btn-ghost btn-sm" style="font-size:var(--text-xs)">✏️ Edit</a>
+                <a href="{{ url_for('assignments.assignment_submissions', classroom_id=classroom.id, assignment_id=a.id) }}" class="btn btn-ghost btn-sm" style="font-size:var(--text-xs)">📋 All Submissions</a>
+                <button class="btn btn-ghost btn-sm" style="font-size:var(--text-xs)" onclick="toggleSubExpand({{ a.id }})">👁 View Submissions</button>
+                <button class="btn btn-ghost btn-sm" style="font-size:var(--text-xs);color:var(--color-error)" onclick="deleteAssignment({{ classroom.id }}, {{ a.id }})">🗑 Delete</button>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="assignment-meta">
+              {% if a.due_date %}<span>📅 Due: <strong>{{ a.due_date.strftime('%d %b %Y %H:%M') if a.due_date }}</strong></span>{% endif %}
+              <span>🏅 Max Marks: <strong>{{ a.max_marks }}</strong></span>
+              {% if a.max_attempts %}<span>🔄 Attempts: <strong>{{ a.max_attempts }}</strong></span>{% endif %}
+              {% if session.role == 'instructor' %}
+                {% set subs = assignment_submissions_all.get(a.id, []) %}
+                <span>👥 Submissions: <strong>{{ subs|length }}</strong></span>
+                {% set graded = subs|selectattr('ai_grade')|list %}
+                <span>✅ Graded: <strong>{{ graded|length }}</strong></span>
+              {% endif %}
+            </div>
+
+            {% if a.description or a.assign_text %}
+            <div class="assignment-body">
+              {{ (a.description or a.assign_text or '')|truncate(300) }}
+            </div>
+            {% endif %}
+
+            <div class="assignment-footer">
+              {% if session.role == 'student' %}
+                {% set sub = my_assignment_submissions.get(a.id) %}
+                {% if sub %}
+                  {% set final = sub.teacher_grade if sub.teacher_grade is not none else sub.ai_grade %}
+                  {% if sub.locked and final is not none %}
+                    <div style="display:flex;align-items:center;gap:var(--space-3);">
+                      <span class="grade-badge grade-{{ 'A' if final >= 90 else 'B' if final >= 80 else 'C' if final >= 70 else 'D' if final >= 60 else 'F' }}">{{ final }}/{{ a.max_marks }}</span>
+                      <span style="color:var(--color-success);font-size:var(--text-xs);font-weight:600;">✅ Graded</span>
+                      <a href="{{ url_for('assignments.assignment_result', classroom_id=classroom.id, assignment_id=a.id) }}" class="btn btn-primary btn-sm">View Result</a>
+                    </div>
+                  {% elif sub.locked %}
+                    <span style="font-size:var(--text-xs);color:var(--color-text-muted);">⏳ Submitted — AI grading in progress...</span>
+                    <a href="{{ url_for('assignments.assignment_result', classroom_id=classroom.id, assignment_id=a.id) }}" class="btn btn-secondary btn-sm">Check Status</a>
+                  {% else %}
+                    <span style="font-size:var(--text-xs);color:var(--color-text-muted);">📤 Submitted</span>
+                  {% endif %}
+                {% else %}
+                  {% if a.visibility == 'closed' %}
+                    <span style="font-size:var(--text-xs);color:var(--color-text-muted);">🔒 Submissions closed</span>
+                  {% else %}
+                    <button class="btn btn-primary btn-sm" onclick="openSubmitModal({{ a.id }}, '{{ a.title|replace("'", "\\'") }}', {{ a.max_marks }})">📤 Submit Assignment</button>
+                  {% endif %}
+                {% endif %}
+              {% endif %}
+            </div>
+
+            <!-- Teacher: Inline submissions expand -->
+            {% if session.role == 'instructor' %}
+            <div class="sub-expand-area" id="sub-expand-{{ a.id }}">
+              {% set subs = assignment_submissions_all.get(a.id, []) %}
+              {% if subs %}
+              <table class="sub-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Student</th>
+                    <th>Submitted</th>
+                    <th>AI Score</th>
+                    <th>Override</th>
+                    <th>Final Grade</th>
+                    <th>Status</th>
+                    <th>Feedback</th>
+                  </tr>
+                </thead>
+                <tbody>
+                {% for s in subs %}
+                {% set final = s.teacher_grade if s.teacher_grade is not none else s.ai_grade %}
+                {% set glabel = 'A' if final and final >= 90 else 'B' if final and final >= 80 else 'C' if final and final >= 70 else 'D' if final and final >= 60 else 'F' if final is not none else 'pending' %}
+                <tr>
+                  <td style="color:var(--color-text-muted)">{{ loop.index }}</td>
+                  <td><strong>{{ s.student_name }}</strong></td>
+                  <td style="font-size:0.78rem;color:var(--color-text-muted)">{{ s.submitted_at.strftime('%d %b %Y %H:%M') if s.submitted_at else '—' }}</td>
+                  <td>
+                    {% if s.ai_grade is not none %}
+                    <span class="grade-badge grade-{{ 'A' if s.ai_grade >= 90 else 'B' if s.ai_grade >= 80 else 'C' if s.ai_grade >= 70 else 'D' if s.ai_grade >= 60 else 'F' }}">{{ s.ai_grade }}</span>
+                    {% else %}<span style="color:var(--color-text-muted);font-size:0.78rem">⏳ Pending</span>{% endif %}
+                  </td>
+                  <td>
+                    <div class="override-wrap">
+                      <input type="number" class="override-input" id="ov-{{ s.id }}" value="{{ s.teacher_grade or '' }}" min="0" max="{{ a.max_marks }}" placeholder="—">
+                      <button class="btn-save-grade" onclick="saveGrade({{ s.id }}, '{{ a.max_marks }}')">Save</button>
+                    </div>
+                  </td>
+                  <td>
+                    {% if glabel != 'pending' %}
+                    <span class="grade-badge grade-{{ glabel }}">{{ glabel }}</span>
+                    {% else %}<span style="color:var(--color-text-muted)">—</span>{% endif %}
+                  </td>
+                  <td>
+                    {% if s.locked %}<span style="font-size:0.75rem;color:var(--color-text-muted)">🔒 Locked</span>
+                    {% else %}<span style="font-size:0.75rem;color:var(--color-text-muted)">Open</span>{% endif %}
+                  </td>
+                  <td>
+                    {% if s.ai_feedback %}
+                    <button style="font-size:0.75rem;padding:2px 8px;border-radius:var(--radius-sm);background:var(--color-surface-offset);border:1px solid var(--color-border);cursor:pointer;color:var(--color-text)"
+                      onclick="showFeedbackModal('{{ s.student_name }}', `{{ (s.ai_feedback or '')|replace('`','\\`')|replace('\n','\\n') }}`)">
+                      View
+                    </button>
+                    {% else %}<span style="color:var(--color-text-muted);font-size:0.75rem">—</span>{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+              {% else %}
+              <p style="color:var(--color-text-muted);font-size:var(--text-sm);padding:var(--space-3) 0">📭 No submissions yet for this assignment.</p>
+              {% endif %}
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+          {% endfor %}
+        {% else %}
+        <div style="padding:var(--space-8);text-align:center;color:var(--color-text-muted)">
+          <div style="font-size:2.5rem;margin-bottom:var(--space-3)">📝</div>
+          <p style="font-size:var(--text-sm)">
+            {% if session.role == 'instructor' %}
+            No assignments yet. Click <strong>+ Create Assignment</strong> to get started.
+            {% else %}
+            No assignments posted yet. Check back soon!
+            {% endif %}
+          </p>
+        </div>
+        {% endif %}
+      </div>
+
       <!-- Lecture Materials -->
       <div class="card" style="margin-top:var(--space-6)">
         <div class="card-header">
@@ -158,14 +375,12 @@
             </div>
             <div class="material-actions">
               {% if m.original_name.endswith('.pdf') %}
-              <!-- PDF: open inline viewer modal -->
               <button class="view-btn"
                 onclick="openPdfModal('{{ url_for('serve_lecture', classroom_id=classroom.id, filename=m.filename) }}', '{{ m.original_name|replace("'", "\\'") }}')"
                 title="View PDF">
                 👁 View
               </button>
               {% else %}
-              <!-- Other files: download -->
               <a class="view-btn" href="{{ url_for('serve_lecture', classroom_id=classroom.id, filename=m.filename) }}" download title="Download file">
                 ⬇ Download
               </a>
@@ -202,6 +417,12 @@
           <dd><strong style="letter-spacing:0.1em">{{ classroom.code }}</strong></dd>
           {% endif %}
         </dl>
+        {% if session.role == 'instructor' %}
+        <div style="margin-top:var(--space-4);display:flex;flex-direction:column;gap:var(--space-2)">
+          <a href="{{ url_for('assignments.create_assignment', classroom_id=classroom.id) }}" class="btn btn-primary btn-sm" style="width:100%;text-align:center">+ Create Assignment</a>
+          <a href="{{ url_for('assignments.classroom_analytics', classroom_id=classroom.id) }}" class="btn btn-secondary btn-sm" style="width:100%;text-align:center">📈 Analytics</a>
+        </div>
+        {% endif %}
       </div>
 
       <div class="card" style="margin-top:var(--space-4)">
@@ -233,14 +454,45 @@
       <span class="pdf-modal-title" id="pdfModalTitle">Loading…</span>
       <button class="pdf-modal-close" onclick="closePdfModal()" aria-label="Close viewer">✕</button>
     </div>
-    <div class="pdf-modal-toolbar">
-      <a id="pdfDownloadBtn" href="#" class="tool-btn" download>⬇ Download</a>
-      <a id="pdfOpenTabBtn" href="#" target="_blank" rel="noopener noreferrer" class="tool-btn">↗ Open in new tab</a>
-      <span class="page-info" id="pdfPageInfo"></span>
+    <div class="pdf-embed-wrap" id="pdfEmbedWrap"></div>
+  </div>
+</div>
+
+<!-- Student Submit Assignment Modal -->
+<div class="modal-overlay" id="submitModal" onclick="closeSubmitModalOnOverlay(event)">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeSubmitModal()">✕</button>
+    <h3>📤 Submit Assignment</h3>
+    <p id="submitModalTitle" style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-4)"></p>
+
+    <div class="file-drop-zone" id="dropZone" onclick="document.getElementById('submitFile').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+      <input type="file" id="submitFile" accept=".pdf,.doc,.docx" onchange="handleFileSelect(event)">
+      <div style="font-size:2rem;margin-bottom:var(--space-2)">📄</div>
+      <div style="font-weight:600">Drop your file here or click to browse</div>
+      <div style="font-size:var(--text-xs);margin-top:var(--space-1)">Accepted: PDF, DOC, DOCX</div>
     </div>
-    <div class="pdf-embed-wrap" id="pdfEmbedWrap">
-      <!-- iframe inserted by JS -->
+    <div class="file-name-display" id="fileNameDisplay"></div>
+
+    <button class="btn-submit-assignment" id="submitBtn" onclick="doSubmit()">Submit Assignment</button>
+
+    <div class="submit-progress" id="submitProgress">
+      <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-2)">🤖 AI is evaluating your submission…</p>
+      <div class="nc-stage-row">
+        <span class="nc-stage-pill" id="sp-extract">📄 Extract</span>
+        <span class="nc-stage-pill" id="sp-relevance">🔍 Relevance</span>
+        <span class="nc-stage-pill" id="sp-evaluate">⚖️ Grading</span>
+        <span class="nc-stage-pill" id="sp-lock">🔒 Lock</span>
+      </div>
     </div>
+  </div>
+</div>
+
+<!-- Teacher: Feedback Modal -->
+<div class="modal-overlay" id="feedbackModal" onclick="closeFeedbackModal(event)">
+  <div class="modal-box" style="max-width:680px;max-height:80vh;overflow-y:auto">
+    <button class="modal-close" onclick="document.getElementById('feedbackModal').classList.remove('open')">✕</button>
+    <h3>AI Feedback — <span id="fbStudentName"></span></h3>
+    <div id="fbContent" style="margin-top:var(--space-4);font-size:var(--text-sm);line-height:1.8"></div>
   </div>
 </div>
 
@@ -248,6 +500,8 @@
 const CLASSROOM_ID = {{ classroom.id }};
 let trainingPoller = null;
 let isTraining = {{ 'true' if training_status == 'running' else 'false' }};
+let activeAssignmentId = null;
+let activeMaxMarks = 100;
 
 // ── Chat ─────────────────────────────────────────────────────────────────────
 
@@ -339,7 +593,7 @@ function updateTrainingUI(data) {
   const btn     = document.getElementById('trainBtn');
   const spinner = document.getElementById('trainSpinner');
   const label   = document.getElementById('trainBtnLabel');
-  if (!btn) return; // student view has no trainBtn
+  if (!btn) return;
 
   if (data.status === 'running') {
     setBannerVisible(true);
@@ -421,32 +675,247 @@ async function deleteLecture(classroomId, materialId, name) {
   }
 }
 
+// ── Delete Assignment ──────────────────────────────────────────────────────────
+
+async function deleteAssignment(classroomId, assignmentId) {
+  if (!confirm('Delete (close) this assignment? Students will no longer see it.')) return;
+  try {
+    const data = await (await fetch(`/classroom/${classroomId}/assignment/${assignmentId}/delete`, {method: 'POST'})).json();
+    if (data.ok) {
+      document.getElementById(`asgn-${assignmentId}`)?.remove();
+      showToast('🗑 Assignment closed.');
+    } else {
+      showToast('❌ Could not delete assignment.');
+    }
+  } catch(e) {
+    showToast('❌ Network error.');
+  }
+}
+
+// ── Toggle inline submissions ──────────────────────────────────────────────────
+
+function toggleSubExpand(assignmentId) {
+  const area = document.getElementById(`sub-expand-${assignmentId}`);
+  if (area) area.classList.toggle('open');
+}
+
+// ── Save Grade Override ────────────────────────────────────────────────────────
+
+async function saveGrade(subId, maxMarks) {
+  const input = document.getElementById(`ov-${subId}`);
+  const val = parseInt(input.value);
+  if (isNaN(val) || val < 0 || val > maxMarks) {
+    showToast(`⚠️ Grade must be between 0 and ${maxMarks}`);
+    return;
+  }
+  try {
+    const data = await (await fetch(`/assignment/submission/${subId}/override`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({grade: val, feedback: ''})
+    })).json();
+    if (data.ok) {
+      showToast(`✅ Grade saved: ${val}`);
+    } else {
+      showToast('❌ Failed to save grade.');
+    }
+  } catch(e) {
+    showToast('❌ Network error.');
+  }
+}
+
+// ── Student Submit Modal ───────────────────────────────────────────────────────
+
+function openSubmitModal(assignmentId, title, maxMarks) {
+  activeAssignmentId = assignmentId;
+  activeMaxMarks = maxMarks;
+  document.getElementById('submitModalTitle').textContent = title + ' (Max: ' + maxMarks + ' marks)';
+  document.getElementById('fileNameDisplay').textContent = '';
+  document.getElementById('submitFile').value = '';
+  document.getElementById('submitProgress').style.display = 'none';
+  document.getElementById('submitBtn').disabled = false;
+  document.getElementById('submitBtn').textContent = 'Submit Assignment';
+  ['sp-extract','sp-relevance','sp-evaluate','sp-lock'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.classList.remove('active','done'); }
+  });
+  document.getElementById('submitModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSubmitModal() {
+  document.getElementById('submitModal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function closeSubmitModalOnOverlay(e) {
+  if (e.target === document.getElementById('submitModal')) closeSubmitModal();
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.add('dragover');
+}
+
+function handleDragLeave(e) {
+  document.getElementById('dropZone').classList.remove('dragover');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    document.getElementById('submitFile').files = dt.files;
+    document.getElementById('fileNameDisplay').textContent = '📎 ' + file.name;
+  }
+}
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) document.getElementById('fileNameDisplay').textContent = '📎 ' + file.name;
+}
+
+const STAGE_IDS = ['sp-extract','sp-relevance','sp-evaluate','sp-lock'];
+
+async function doSubmit() {
+  const file = document.getElementById('submitFile').files[0];
+  if (!file) { showToast('⚠️ Please select a PDF or DOCX file first.'); return; }
+
+  const allowed = ['application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['pdf','doc','docx'].includes(ext)) {
+    showToast('⚠️ Only PDF, DOC, or DOCX files are accepted.'); return;
+  }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Uploading...';
+
+  const formData = new FormData();
+  formData.append('submission_file', file);
+
+  let sub_id = null;
+
+  try {
+    const res = await fetch(`/classroom/${CLASSROOM_ID}/assignment/${activeAssignmentId}/submit`, {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      showToast('❌ ' + (data.error || 'Submission failed.'));
+      btn.disabled = false;
+      btn.textContent = 'Submit Assignment';
+      return;
+    }
+    sub_id = data.sub_id;
+    btn.textContent = '✅ Submitted!';
+  } catch(e) {
+    showToast('❌ Network error during upload.');
+    btn.disabled = false;
+    btn.textContent = 'Submit Assignment';
+    return;
+  }
+
+  // Show AI pipeline stages
+  document.getElementById('submitProgress').style.display = 'block';
+  let stageIndex = 0;
+  STAGE_IDS[0] && document.getElementById(STAGE_IDS[0])?.classList.add('active');
+
+  const stageTimer = setInterval(() => {
+    if (stageIndex < STAGE_IDS.length - 1) {
+      const prev = document.getElementById(STAGE_IDS[stageIndex]);
+      if (prev) { prev.classList.remove('active'); prev.classList.add('done'); }
+      stageIndex++;
+      const cur = document.getElementById(STAGE_IDS[stageIndex]);
+      if (cur) cur.classList.add('active');
+    }
+  }, 15000);
+
+  // Poll for grading completion
+  if (sub_id) {
+    let polls = 0;
+    const poller = setInterval(async () => {
+      polls++;
+      try {
+        const r = await fetch(`/assignment/submission/${sub_id}/status`);
+        const d = await r.json();
+        if (d.graded || d.locked || polls >= 20) {
+          clearInterval(poller);
+          clearInterval(stageTimer);
+          STAGE_IDS.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) { el.classList.remove('active'); el.classList.add('done'); }
+          });
+          showToast('🎉 AI grading complete! Refreshing...');
+          setTimeout(() => location.reload(), 1800);
+        }
+      } catch(e) {}
+    }, 6000);
+  } else {
+    setTimeout(() => {
+      clearInterval(stageTimer);
+      showToast('📤 Submitted! AI is grading in the background...');
+      setTimeout(() => location.reload(), 2500);
+    }, 5000);
+  }
+}
+
+// ── Feedback Modal ──────────────────────────────────────────────────────────────
+
+function showFeedbackModal(studentName, rawText) {
+  document.getElementById('fbStudentName').textContent = studentName;
+  const sections = [
+    { key: 'CRITERION_BREAKDOWN:', label: '📊 Criterion Breakdown', next: 'SCORE:' },
+    { key: 'STRENGTHS:', label: '💪 Strengths', next: 'WEAKNESSES:' },
+    { key: 'WEAKNESSES:', label: '⚠️ Weaknesses', next: 'IMPROVEMENT_SUGGESTIONS:' },
+    { key: 'IMPROVEMENT_SUGGESTIONS:', label: '🚀 Suggestions', next: 'DETAILED_FEEDBACK:' },
+    { key: 'DETAILED_FEEDBACK:', label: '📄 Detailed Feedback', next: null },
+  ];
+  const text = rawText.replace(/\\n/g, '\n');
+  let html = '';
+  let matched = false;
+  for (const s of sections) {
+    if (!text.includes(s.key)) continue;
+    matched = true;
+    let content = text.split(s.key)[1];
+    if (s.next && text.includes(s.next)) content = content.split(s.next)[0];
+    content = content.trim();
+    if (!content) continue;
+    html += `<div style="margin-bottom:1.2rem"><strong style="color:var(--color-text)">${s.label}</strong><pre style="white-space:pre-wrap;background:var(--color-surface-offset);padding:.75rem;border-radius:8px;font-size:0.82rem;margin-top:.5rem;line-height:1.7">${content.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre></div>`;
+  }
+  if (!matched) {
+    html = `<pre style="white-space:pre-wrap;font-size:var(--text-sm)">${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>`;
+  }
+  document.getElementById('fbContent').innerHTML = html;
+  document.getElementById('feedbackModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeFeedbackModal(e) {
+  if (!e || e.target === document.getElementById('feedbackModal')) {
+    document.getElementById('feedbackModal').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+}
+
 // ── PDF Modal ──────────────────────────────────────────────────────────────────
 
 function openPdfModal(url, name) {
-  const modal  = document.getElementById('pdfModal');
-  const wrap   = document.getElementById('pdfEmbedWrap');
-  const title  = document.getElementById('pdfModalTitle');
-  const dlBtn  = document.getElementById('pdfDownloadBtn');
-  const tabBtn = document.getElementById('pdfOpenTabBtn');
-
-  title.textContent = name;
-  dlBtn.href  = url;
-  dlBtn.setAttribute('download', name);
-  tabBtn.href = url;
-
-  // Inject iframe freshly so it loads cleanly each time
-  wrap.innerHTML = `<iframe src="${url}" title="${name}" allow="fullscreen"></iframe>`;
-
+  const modal = document.getElementById('pdfModal');
+  const wrap  = document.getElementById('pdfEmbedWrap');
+  document.getElementById('pdfModalTitle').textContent = name;
+  wrap.innerHTML = `<iframe src="${url}" title="${name}" allow="fullscreen" style="width:100%;height:70vh;border:none"></iframe>`;
   modal.classList.add('open');
   document.body.style.overflow = 'hidden';
 }
 
 function closePdfModal() {
-  const modal = document.getElementById('pdfModal');
-  modal.classList.remove('open');
+  document.getElementById('pdfModal').classList.remove('open');
   document.body.style.overflow = '';
-  // Remove iframe to stop loading / free memory
   document.getElementById('pdfEmbedWrap').innerHTML = '';
 }
 
@@ -454,9 +923,8 @@ function closePdfModalOnOverlay(e) {
   if (e.target === document.getElementById('pdfModal')) closePdfModal();
 }
 
-// Keyboard close
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closePdfModal();
+  if (e.key === 'Escape') { closePdfModal(); closeSubmitModal(); closeFeedbackModal(); }
 });
 
 // ── Toast ──────────────────────────────────────────────────────────────────────

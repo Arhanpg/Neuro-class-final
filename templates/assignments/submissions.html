@@ -20,7 +20,7 @@
     <span class="badge bg-secondary">{{ submissions|length }} total</span>
     <div class="ms-auto d-flex gap-2">
       <a href="{{ url_for('assignments.classroom_analytics', classroom_id=classroom.id) }}" class="btn btn-sm btn-outline-info">📈 Analytics</a>
-      <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=classroom.id) }}" class="btn btn-sm btn-outline-warning">🏆 Leaderboard</a>
+      <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=classroom.id, assignment_id=assignment.id) }}" class="btn btn-sm btn-outline-warning">🏆 Leaderboard</a>
     </div>
   </div>
 
@@ -147,14 +147,13 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <!-- Parsed sections -->
         <div id="fbParsed"></div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Breakdown Tooltip -->
+<!-- Breakdown Modal -->
 <div class="modal fade" id="breakdownModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -188,14 +187,12 @@ document.querySelectorAll('.save-override').forEach(btn => {
   btn.addEventListener('click', () => {
     const id = btn.dataset.subId;
     const val = document.querySelector(`.override-input[data-sub-id="${id}"]`).value;
-    const feedbackInput = document.querySelector(`.feedback-input[data-sub-id="${id}"]`);
-    const fb = feedbackInput ? feedbackInput.value : '';
     btn.textContent = '...';
     btn.disabled = true;
     fetch(`/assignment/submission/${id}/override`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({grade: parseInt(val), feedback: fb})
+      body: JSON.stringify({grade: parseInt(val), feedback: ''})
     }).then(r => r.json()).then(d => {
       btn.textContent = d.ok ? '✓ Saved' : '✗ Error';
       btn.disabled = false;
