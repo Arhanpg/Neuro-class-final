@@ -60,7 +60,7 @@ def login_required(role=None):
     return decorator
 
 
-# ─── LANDING ───────────────────────────────────────────────────────────────
+# ─── LANDING ─────────────────────────────────────────────────────────
 
 @app.route('/')
 def index():
@@ -69,7 +69,7 @@ def index():
     return render_template('index.html')
 
 
-# ─── AUTH ──────────────────────────────────────────────────────────────────
+# ─── AUTH ──────────────────────────────────────────────────────────
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -145,7 +145,7 @@ def logout():
     return redirect(url_for('index'))
 
 
-# ─── DASHBOARD ─────────────────────────────────────────────────────────────
+# ─── DASHBOARD ─────────────────────────────────────────────────────────
 
 @app.route('/dashboard')
 def dashboard():
@@ -194,7 +194,7 @@ def student_dashboard():
     return render_template('dashboard/student.html', classrooms=classrooms)
 
 
-# ─── CLASSROOM CRUD ────────────────────────────────────────────────────────
+# ─── CLASSROOM CRUD ─────────────────────────────────────────────────────
 
 @app.route('/classroom/create', methods=['GET', 'POST'])
 @login_required(role='instructor')
@@ -310,7 +310,7 @@ def view_classroom(classroom_id):
     )
     materials = cursor.fetchall()
 
-    # ── FIX: Only load THIS user's chat history ──────────────────────────────
+    # Only load THIS user's chat history
     cursor.execute(
         '''SELECT ch.role, ch.message, ch.created_at, u.full_name
            FROM chat_history ch
@@ -336,7 +336,7 @@ def view_classroom(classroom_id):
     )
 
 
-# ─── TEACHER: UPLOAD LECTURES ──────────────────────────────────────────────
+# ─── TEACHER: UPLOAD LECTURES ──────────────────────────────────────────────────
 
 @app.route('/classroom/<int:classroom_id>/upload_lectures', methods=['GET', 'POST'])
 @login_required(role='instructor')
@@ -388,7 +388,7 @@ def upload_lectures(classroom_id):
     return render_template('classroom/upload_lectures.html', classroom=classroom, materials=materials)
 
 
-# ─── TEACHER: DELETE LECTURE ───────────────────────────────────────────────
+# ─── TEACHER: DELETE LECTURE ──────────────────────────────────────────────────
 
 @app.route('/classroom/<int:classroom_id>/delete_lecture/<int:material_id>', methods=['POST'])
 @login_required(role='instructor')
@@ -484,7 +484,7 @@ def train_status(classroom_id):
     })
 
 
-# ─── CHATBOT API ───────────────────────────────────────────────────────────
+# ─── CHATBOT API ───────────────────────────────────────────────────────
 
 @app.route('/classroom/<int:classroom_id>/chat', methods=['POST'])
 def classroom_chat(classroom_id):
@@ -510,18 +510,50 @@ def classroom_chat(classroom_id):
     if not question:
         return jsonify({'error': 'Message cannot be empty'}), 400
 
-    # Store user message — tagged with user_id for isolation
+    # Store user message tagged with user_id for isolation
     cursor.execute(
         'INSERT INTO chat_history (classroom_id, user_id, role, message) VALUES (%s,%s,%s,%s)',
         (classroom_id, session['user_id'], 'user', question)
     )
     mysql.connection.commit()
 
-    context_data = {'class_name': classroom['name']}
-    from ai_engine import rag_query
-    answer = rag_query(classroom_id, question, context_data)
+    # Fetch active assignments so the AI can answer deadline/marking queries
+    cursor.execute(
+        '''SELECT title, due_date, max_marks
+           FROM assignments
+           WHERE classroom_id=%s AND due_date >= CURDATE()
+           ORDER BY due_date ASC LIMIT 10''',
+        (classroom_id,)
+    )
+    assignments = cursor.fetchall() or []
 
-    # Store assistant reply — also tagged with this user's id
+    # Build rich context for the AI
+    context_data = {
+        'class_name':    classroom.get('name', ''),
+        'subject':       classroom.get('subject', ''),
+        'student_name':  session.get('full_name', ''),   # ← name recall fix
+        'assignments':   [
+            {
+                'title':     a.get('title'),
+                'due_date':  str(a.get('due_date', 'TBD')),
+                'max_marks': a.get('max_marks'),
+            }
+            for a in assignments
+        ],
+    }
+
+    # Unique per-user per-classroom session key for conversation memory
+    sess_key = f"{classroom_id}_{session['user_id']}"
+
+    from ai_engine import rag_query
+    answer = rag_query(
+        classroom_id,
+        question,
+        context_data=context_data,
+        session_key=sess_key,     # ← conversation memory fix
+    )
+
+    # Store assistant reply tagged with this user's id
     cursor.execute(
         'INSERT INTO chat_history (classroom_id, user_id, role, message) VALUES (%s,%s,%s,%s)',
         (classroom_id, session['user_id'], 'assistant', answer)
@@ -532,7 +564,6 @@ def classroom_chat(classroom_id):
 
 
 # ─── SERVE LECTURE FILES ────────────────────────────────────────────────────
-# Handles both PDF (inline viewer) and other doc types (download)
 
 @app.route('/uploads/lectures/<int:classroom_id>/<path:filename>')
 def serve_lecture(classroom_id, filename):
@@ -546,7 +577,6 @@ def serve_lecture(classroom_id, filename):
 
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
 
-    # Verify the file belongs to this classroom
     cursor.execute(
         'SELECT * FROM lecture_materials WHERE classroom_id=%s AND filename=%s',
         (classroom_id, filename)
@@ -555,7 +585,6 @@ def serve_lecture(classroom_id, filename):
     if not material:
         abort(404)
 
-    # Verify access rights
     cursor.execute('SELECT instructor_id FROM classrooms WHERE id=%s', (classroom_id,))
     classroom = cursor.fetchone()
     if not classroom:
@@ -577,18 +606,16 @@ def serve_lecture(classroom_id, filename):
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
 
     if ext == 'pdf':
-        # Inline — browser opens its built-in PDF viewer
         response = make_response(send_from_directory(folder, filename))
         response.headers['Content-Disposition'] = f'inline; filename="{material["original_name"]}"'
         response.headers['Content-Type'] = 'application/pdf'
         return response
     else:
-        # Force download for doc/docx/txt
         return send_from_directory(folder, filename, as_attachment=True,
                                    download_name=material['original_name'])
 
 
-# ─── API HELPERS ────────────────────────────────────────────────────────────
+# ─── API HELPERS ────────────────────────────────────────────────────────
 
 @app.route('/api/classroom/<int:classroom_id>/code')
 @login_required(role='instructor')
