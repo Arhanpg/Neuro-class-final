@@ -69,18 +69,26 @@
   {% else %}
   {% set feedback = submission.ai_feedback or '' %}
 
-  <!-- Criterion Breakdown -->
+  <!-- Criterion Breakdown —
+       Handles both CRITERION_BREAKDOWN: (with space) and CRITERIONBREAKDOWN (no space/colon)
+  -->
   {% if 'CRITERION_BREAKDOWN:' in feedback or 'CRITERIONBREAKDOWN' in feedback %}
   <div class="nc-section-card shadow-sm">
     <div class="nc-card-header bg-light">📊 Criterion Breakdown</div>
     <div class="card-body">
-      {% set breakdown_raw = feedback.split('CRITERION_BREAKDOWN:')[1] if 'CRITERION_BREAKDOWN:' in feedback else feedback.split('CRITERIONBREAKDOWN')[1] if 'CRITERIONBREAKDOWN' in feedback else '' %}
-      {% set breakdown_text = breakdown_raw.split('\n\nSCORE:')[0] if '\n\nSCORE:' in breakdown_raw else breakdown_raw.split('SCORE:')[0] if 'SCORE:' in breakdown_raw else breakdown_raw %}
-      {% for line in breakdown_text.split('\n') if line.strip() and line.strip().startswith('-') %}
+      {%- if 'CRITERION_BREAKDOWN:' in feedback %}
+        {%- set breakdown_raw = feedback.split('CRITERION_BREAKDOWN:')[1] %}
+      {%- elif 'CRITERIONBREAKDOWN:' in feedback %}
+        {%- set breakdown_raw = feedback.split('CRITERIONBREAKDOWN:')[1] %}
+      {%- else %}
+        {%- set breakdown_raw = feedback.split('CRITERIONBREAKDOWN')[1] %}
+      {%- endif %}
+      {%- set breakdown_text = breakdown_raw.split('\n\nSCORE:')[0].split('\nSCORE:')[0].split('SCORE:')[0].split('\n\nSTRENGTHS')[0].split('STRENGTHS:')[0] %}
+      {% for line in breakdown_text.split('\n') if line.strip() and ('-' in line or ':' in line) %}
       {% set line_clean = line.strip().lstrip('- ') %}
       {% set parts = line_clean.split(':') %}
       <div class="nc-criterion-row">
-        <div style="width:180px;flex-shrink:0;font-size:.9rem;font-weight:600">{{ parts[0].strip() if parts|length > 0 else line_clean }}</div>
+        <div style="width:190px;flex-shrink:0;font-size:.9rem;font-weight:600">{{ parts[0].strip() if parts|length > 0 else line_clean }}</div>
         {% if parts|length > 1 %}
         {% set score_part = parts[1].strip() %}
         {% set score_nums = score_part.split('/') %}
@@ -91,7 +99,7 @@
         <div class="nc-score-bar-bg">
           <div class="nc-score-bar" style="width:{{ pct|round }}%;background:{{ '#4CAF50' if pct >= 70 else '#FFC107' if pct >= 40 else '#f44336' }}"></div>
         </div>
-        <span style="font-size:.85rem;min-width:60px;text-align:right">{{ score_part.split(' ')[0] }}</span>
+        <span style="font-size:.85rem;min-width:70px;text-align:right;font-weight:600">{{ score_part.split(' ')[0] }}</span>
         {% else %}
         <span class="text-muted small">{{ score_part[:80] }}</span>
         {% endif %}
@@ -110,7 +118,7 @@
       <div class="nc-section-card shadow-sm h-100">
         <div class="nc-card-header" style="background:#d1e7dd;color:#0a3622">💪 Strengths</div>
         <div class="card-body small" style="white-space:pre-wrap">
-          {% if 'STRENGTHS:' in feedback %}{{ feedback.split('STRENGTHS:')[1].split('WEAKNESSES:')[0].strip() }}
+          {% if 'STRENGTHS:' in feedback %}{{ feedback.split('STRENGTHS:')[1].split('WEAKNESSES:')[0].split('WEAKNESSES')[0].strip() }}
           {% elif 'STRENGTHS' in feedback %}{{ feedback.split('STRENGTHS')[1].split('WEAKNESSES')[0].lstrip(':').strip()[:600] }}
           {% else %}—{% endif %}
         </div>
@@ -120,7 +128,7 @@
       <div class="nc-section-card shadow-sm h-100">
         <div class="nc-card-header" style="background:#f8d7da;color:#58151c">⚠️ Weaknesses</div>
         <div class="card-body small" style="white-space:pre-wrap">
-          {% if 'WEAKNESSES:' in feedback %}{{ feedback.split('WEAKNESSES:')[1].split('IMPROVEMENT_SUGGESTIONS:')[0].split('IMPROVEMENTSUGGESTIONS')[0].strip() }}
+          {% if 'WEAKNESSES:' in feedback %}{{ feedback.split('WEAKNESSES:')[1].split('IMPROVEMENT_SUGGESTIONS:')[0].split('IMPROVEMENTSUGGESTIONS')[0].split('IMPROVEMENT')[0].strip() }}
           {% elif 'WEAKNESSES' in feedback %}{{ feedback.split('WEAKNESSES')[1].split('IMPROVEMENT')[0].lstrip(':').strip()[:600] }}
           {% else %}—{% endif %}
         </div>
@@ -129,12 +137,18 @@
   </div>
 
   <!-- Improvement Suggestions -->
-  {% set has_suggestions = 'IMPROVEMENT_SUGGESTIONS:' in feedback or 'IMPROVEMENTSUGGESTIONS' in feedback %}
+  {% set has_suggestions = 'IMPROVEMENT_SUGGESTIONS:' in feedback or 'IMPROVEMENTSUGGESTIONS' in feedback or 'IMPROVEMENT_SUGGESTIONS' in feedback %}
   {% if has_suggestions %}
   <div class="nc-section-card shadow-sm mb-3">
     <div class="nc-card-header" style="background:#fff3cd;color:#664d03">🚀 Improvement Suggestions</div>
     <div class="card-body">
-      {% set imp_raw = feedback.split('IMPROVEMENT_SUGGESTIONS:')[1] if 'IMPROVEMENT_SUGGESTIONS:' in feedback else feedback.split('IMPROVEMENTSUGGESTIONS')[1].lstrip(':') %}
+      {%- if 'IMPROVEMENT_SUGGESTIONS:' in feedback %}
+        {%- set imp_raw = feedback.split('IMPROVEMENT_SUGGESTIONS:')[1] %}
+      {%- elif 'IMPROVEMENTSUGGESTIONS:' in feedback %}
+        {%- set imp_raw = feedback.split('IMPROVEMENTSUGGESTIONS:')[1] %}
+      {%- else %}
+        {%- set imp_raw = feedback.split('IMPROVEMENT_SUGGESTIONS')[1].lstrip(':') %}
+      {%- endif %}
       {% set imp_text = imp_raw.split('DETAILED_FEEDBACK:')[0].split('DETAILEDFEEDBACK')[0].strip() %}
       <ul class="mb-0 small">
       {% for line in imp_text.split('\n') if line.strip() %}
@@ -158,7 +172,7 @@
   {% endif %}
 
   <!-- Raw feedback fallback if no structure detected -->
-  {% if not has_suggestions and 'CRITERION_BREAKDOWN:' not in feedback and 'CRITERIONBREAKDOWN' not in feedback and 'STRENGTHS:' not in feedback %}
+  {% if not has_suggestions and 'CRITERION_BREAKDOWN:' not in feedback and 'CRITERIONBREAKDOWN' not in feedback and 'STRENGTHS:' not in feedback and 'STRENGTHS' not in feedback %}
   <div class="nc-section-card shadow-sm mb-3">
     <div class="nc-card-header bg-light">📋 AI Feedback</div>
     <div class="card-body small" style="white-space:pre-wrap; line-height:1.7">{{ feedback }}</div>
@@ -179,7 +193,9 @@
   <div class="d-flex gap-2 mt-3 flex-wrap">
     <a href="{{ url_for('view_classroom', classroom_id=classroom_id) }}" class="btn btn-outline-secondary btn-sm">← Back to Classroom</a>
     <a href="{{ url_for('assignments.student_grades') }}" class="btn btn-outline-info btn-sm">📊 View All Grades</a>
-    <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=classroom_id) }}" class="btn btn-outline-warning btn-sm">🏆 Leaderboard</a>
+    {% if submission.assignment_id %}
+    <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=classroom_id, assignment_id=submission.assignment_id) }}" class="btn btn-outline-warning btn-sm">🏆 Leaderboard</a>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

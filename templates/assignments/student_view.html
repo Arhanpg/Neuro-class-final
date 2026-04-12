@@ -11,10 +11,11 @@
 .nc-rubric-row td { font-size: .92rem; padding: .45rem .75rem; }
 .nc-submit-btn { min-width: 180px; font-weight: 700; font-size: 1rem; border-radius: 10px; padding: .6rem 1.5rem; }
 .nc-eval-stages { display: flex; gap: 0; border-radius: 10px; overflow: hidden; border: 1px solid #dee2e6; margin-bottom: 1.5rem; }
-.nc-stage { flex: 1; text-align: center; padding: .5rem .25rem; background: #f8f9fa; border-right: 1px solid #dee2e6; font-size: .82rem; color: #6c757d; }
+.nc-stage { flex: 1; text-align: center; padding: .5rem .25rem; background: #f8f9fa; border-right: 1px solid #dee2e6; font-size: .82rem; color: #6c757d; transition: background .3s, color .3s; }
 .nc-stage:last-child { border-right: none; }
 .nc-stage .stage-icon { font-size: 1.3rem; display: block; margin-bottom: 2px; }
 .nc-stage.active { background: #e7f1ff; color: #0d6efd; font-weight: 600; }
+.nc-stage.done { background: #d1e7dd; color: #0a3622; }
 </style>
 
 <div class="container py-4" style="max-width:880px">
@@ -28,11 +29,11 @@
   </div>
 
   <!-- AI Evaluation Pipeline Banner -->
-  <div class="nc-eval-stages mb-4">
-    <div class="nc-stage"><span class="stage-icon">📄</span>Extract Text</div>
-    <div class="nc-stage"><span class="stage-icon">🔍</span>Relevance Check</div>
-    <div class="nc-stage"><span class="stage-icon">⚖️</span>Rubric Evaluation</div>
-    <div class="nc-stage active"><span class="stage-icon">🔒</span>Lock & Score</div>
+  <div class="nc-eval-stages mb-4" id="evalPipeline">
+    <div class="nc-stage" id="stage-extract"><span class="stage-icon">📄</span>1. Extract Text</div>
+    <div class="nc-stage" id="stage-relevance"><span class="stage-icon">🔍</span>2. Relevance Check</div>
+    <div class="nc-stage" id="stage-evaluate"><span class="stage-icon">⚖️</span>3. Rubric Grading</div>
+    <div class="nc-stage" id="stage-lock"><span class="stage-icon">🔒</span>4. Lock & Score</div>
   </div>
 
   <!-- Assignment Metadata -->
@@ -107,7 +108,7 @@
         <strong>How AI Evaluation Works</strong>
         <ul class="mb-0 mt-1 small">
           <li><strong>Step 1 — Extract:</strong> AI reads your submission (PDF or GitHub repo)</li>
-          <li><strong>Step 2 — Relevance Check:</strong> Verifies submission matches this course & assignment. Off-topic = max 30 marks.</li>
+          <li><strong>Step 2 — Relevance Check:</strong> Verifies submission matches this course &amp; assignment. Off-topic = max 30 marks.</li>
           <li><strong>Step 3 — Rubric Grade:</strong> Each criterion scored independently. Absent criteria = 0.</li>
           <li><strong>Step 4 — Lock:</strong> Submission permanently locked. Result shown immediately.</li>
         </ul>
@@ -156,9 +157,6 @@
 
   {% elif assignment.due_date and assignment.due_date < now %}
     <div class="alert alert-warning" style="border-radius:10px">⏰ Deadline has passed. Late submissions may be penalised by the instructor.</div>
-    <!-- Still allow submission -->
-    {% include '_submit_form.html' ignore missing %}
-    {% if True %}<div id="submitSection">{{ _submit_form()|safe }}</div>{% endif %}
 
   {% else %}
     <div class="card nc-assignment-card mb-3 shadow-sm">
@@ -241,13 +239,20 @@
 </div>
 
 <!-- Loading Overlay -->
-<div id="loadingOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;">
-  <div class="text-center text-white">
+<div id="loadingOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:9999;align-items:center;justify-content:center;">
+  <div class="text-center text-white" style="max-width:480px;padding:2rem">
     <div class="spinner-border mb-3" style="width:3.5rem;height:3.5rem;border-width:.3em"></div>
-    <h5>AI is evaluating your submission...</h5>
-    <p class="text-white-50 small">Running: Extract → Relevance Check → Rubric Grading → Lock</p>
-    <p class="text-white-50 small">This may take 30–90 seconds. Do not close this page.</p>
-    <div id="loadingStage" class="badge bg-info mt-2" style="font-size:.85rem">Stage: Extracting text...</div>
+    <h5>AI is evaluating your submission…</h5>
+    <p class="text-white-50 small mb-3">Do not close or refresh this page.</p>
+    <!-- Live pipeline stage indicator -->
+    <div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.2);margin-bottom:1rem">
+      <div id="ov-stage-0" style="flex:1;padding:.4rem .1rem;font-size:.75rem;background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);text-align:center;border-right:1px solid rgba(255,255,255,.1);transition:background .3s,color .3s">📄<br>Extract</div>
+      <div id="ov-stage-1" style="flex:1;padding:.4rem .1rem;font-size:.75rem;background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);text-align:center;border-right:1px solid rgba(255,255,255,.1);transition:background .3s,color .3s">🔍<br>Relevance</div>
+      <div id="ov-stage-2" style="flex:1;padding:.4rem .1rem;font-size:.75rem;background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);text-align:center;border-right:1px solid rgba(255,255,255,.1);transition:background .3s,color .3s">⚖️<br>Grading</div>
+      <div id="ov-stage-3" style="flex:1;padding:.4rem .1rem;font-size:.75rem;background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);text-align:center;transition:background .3s,color .3s">🔒<br>Lock</div>
+    </div>
+    <div id="loadingStage" class="badge bg-info mt-1" style="font-size:.85rem">Starting evaluation…</div>
+    <div id="elapsedTimer" class="text-white-50 small mt-2">0s elapsed</div>
   </div>
 </div>
 
@@ -278,17 +283,60 @@ document.getElementById('submitGithub')?.addEventListener('click', () => {
   new bootstrap.Modal(document.getElementById('confirmModal')).show();
 });
 
+// ── Overlay stage helpers ──────────────────────────────────
+const OV_STAGES = ['ov-stage-0','ov-stage-1','ov-stage-2','ov-stage-3'];
+const STAGE_LABELS = ['Extracting text…','Checking relevance…','Grading against rubric…','Locking submission…'];
+
+function setOverlayStage(idx) {
+  OV_STAGES.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (i < idx)  { el.style.background='rgba(40,167,69,.35)'; el.style.color='#a3d9a5'; }
+    else if (i === idx) { el.style.background='rgba(13,110,253,.45)'; el.style.color='#fff'; el.style.fontWeight='700'; }
+    else           { el.style.background='rgba(255,255,255,.08)'; el.style.color='rgba(255,255,255,.4)'; el.style.fontWeight='400'; }
+  });
+  const stageEl = document.getElementById('loadingStage');
+  if (stageEl && STAGE_LABELS[idx]) stageEl.textContent = STAGE_LABELS[idx];
+}
+
+// Also animate the pipeline banner at the top of the page
+function setPagePipelineStage(idx) {
+  ['stage-extract','stage-relevance','stage-evaluate','stage-lock'].forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('active','done');
+    if (i < idx) el.classList.add('done');
+    else if (i === idx) el.classList.add('active');
+  });
+}
+// ─────────────────────────────────────────────────────────
+
 document.getElementById('confirmSubmit')?.addEventListener('click', async () => {
   bootstrap.Modal.getInstance(document.getElementById('confirmModal')).hide();
   const overlay = document.getElementById('loadingOverlay');
   overlay.style.display = 'flex';
 
-  const stages = ['Extracting text...', 'Checking relevance...', 'Grading against rubric...', 'Locking submission...'];
-  let si = 0;
-  const stageEl = document.getElementById('loadingStage');
+  // Start stage 0 immediately
+  let currentStage = 0;
+  setOverlayStage(0);
+  setPagePipelineStage(0);
+
+  // Advance stage every ~18s to match notebook timing
   const stageInterval = setInterval(() => {
-    if (si < stages.length - 1) { si++; stageEl.textContent = 'Stage: ' + stages[si]; }
-  }, 15000);
+    if (currentStage < 3) {
+      currentStage++;
+      setOverlayStage(currentStage);
+      setPagePipelineStage(currentStage);
+    }
+  }, 18000);
+
+  // Elapsed timer
+  let elapsed = 0;
+  const timerInterval = setInterval(() => {
+    elapsed += 1;
+    const el = document.getElementById('elapsedTimer');
+    if (el) el.textContent = elapsed + 's elapsed';
+  }, 1000);
 
   try {
     let resp;
@@ -304,51 +352,60 @@ document.getElementById('confirmSubmit')?.addEventListener('click', async () => 
       });
     }
     const d = await resp.json();
-    clearInterval(stageInterval);
-    overlay.style.display = 'none';
-    if (d.ok) {
-      const subId = d.sub_id;
-      if (subId) {
-        // Poll for grading completion
-        stageEl.textContent = 'Waiting for AI grading...';
-        overlay.style.display = 'flex';
-        pollGrading(subId);
-      } else {
-        window.location.href = `/classroom/${cid}/assignment/${aid}/result`;
-      }
+
+    if (d.ok && d.sub_id) {
+      // Submission accepted — poll for AI grading completion
+      pollGrading(d.sub_id, stageInterval, timerInterval, overlay);
+    } else if (d.ok) {
+      // Fallback: no sub_id returned (shouldn't happen), go straight to result
+      clearInterval(stageInterval);
+      clearInterval(timerInterval);
+      overlay.style.display = 'none';
+      window.location.href = `/classroom/${cid}/assignment/${aid}/result`;
     } else {
+      clearInterval(stageInterval);
+      clearInterval(timerInterval);
+      overlay.style.display = 'none';
       alert('Submission error: ' + (d.error || 'Unknown error'));
     }
   } catch (err) {
     clearInterval(stageInterval);
+    clearInterval(timerInterval);
     overlay.style.display = 'none';
     alert('Submission failed: ' + err.message);
   }
 });
 
-async function pollGrading(subId) {
-  const overlay = document.getElementById('loadingOverlay');
-  const stageEl = document.getElementById('loadingStage');
+async function pollGrading(subId, stageInterval, timerInterval, overlay) {
   let attempts = 0;
-  const maxAttempts = 40; // 2 minutes
-  const interval = setInterval(async () => {
+  const maxAttempts = 60; // up to 3 minutes (every 3s)
+  const pollInterval = setInterval(async () => {
     attempts++;
     try {
       const r = await fetch(`/assignment/submission/${subId}/status`);
       const data = await r.json();
       if (data.graded || data.locked) {
-        clearInterval(interval);
-        overlay.style.display = 'none';
-        window.location.href = `/classroom/${cid}/assignment/${aid}/result`;
+        // Done! mark all stages complete then redirect
+        setOverlayStage(3);
+        setPagePipelineStage(3);
+        clearInterval(pollInterval);
+        clearInterval(stageInterval);
+        clearInterval(timerInterval);
+        setTimeout(() => {
+          overlay.style.display = 'none';
+          window.location.href = `/classroom/${cid}/assignment/${aid}/result`;
+        }, 600);
       } else if (attempts >= maxAttempts) {
-        clearInterval(interval);
+        clearInterval(pollInterval);
+        clearInterval(stageInterval);
+        clearInterval(timerInterval);
         overlay.style.display = 'none';
         window.location.href = `/classroom/${cid}/assignment/${aid}/result`;
-      } else {
-        stageEl.textContent = `AI grading... (${attempts * 3}s elapsed)`;
       }
     } catch(e) {
-      clearInterval(interval);
+      clearInterval(pollInterval);
+      clearInterval(stageInterval);
+      clearInterval(timerInterval);
       overlay.style.display = 'none';
       window.location.href = `/classroom/${cid}/assignment/${aid}/result`;
     }

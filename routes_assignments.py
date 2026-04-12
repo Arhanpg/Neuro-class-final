@@ -477,7 +477,8 @@ def submit_assignment_v2(classroom_id, assignment_id):
             import traceback; traceback.print_exc()
 
     threading.Thread(target=_grade_thread, daemon=True).start()
-    return jsonify({'ok': True, 'message': 'Submitted! AI is evaluating. Check results in ~60 seconds.'})
+    # PATCH: return sub_id so the frontend polling works correctly
+    return jsonify({'ok': True, 'sub_id': sub_id, 'message': 'Submitted! AI is evaluating. Check results in ~60 seconds.'})
 
 
 # ═══════════════════════════════════════════════════════════
@@ -491,7 +492,7 @@ def assignment_result(classroom_id, assignment_id):
 
     cursor = _cursor()
     cursor.execute(
-        '''SELECT s.*, a.title AS assignment_title
+        '''SELECT s.*, a.title AS assignment_title, a.id AS assignment_id
            FROM assignment_submissions s
            JOIN assignments a ON s.assignment_id = a.id
            WHERE s.assignment_id=%s AND s.student_id=%s''',
@@ -607,3 +608,75 @@ def submission_status(sub_id):
     if not row:
         return jsonify({'error': 'Not found'}), 404
     return jsonify({'graded': row['ai_grade'] is not None, 'locked': bool(row['locked'])})
+
+
+# ═══════════════════════════════════════════════════════════
+#  LEADERBOARD — per assignment + classroom projects
+# ═══════════════════════════════════════════════════════════
+
+@assignments_bp.route('/classroom/<int:classroom_id>/assignment/<int:assignment_id>/leaderboard')
+def assignment_leaderboard(classroom_id, assignment_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    cursor = _cursor()
+    cursor.execute('SELECT * FROM classrooms WHERE id=%s', (classroom_id,))
+    classroom = cursor.fetchone()
+
+    # Per-assignment leaderboard — one row per student (their best/latest graded submission)
+    cursor.execute(
+        '''SELECT s.student_id, u.full_name,
+              COALESCE(MAX(s.teacher_grade), MAX(s.ai_grade)) AS final_score,
+              COUNT(s.id) AS submission_count
+           FROM assignment_submissions s
+           JOIN users u ON s.student_id = u.id
+           WHERE s.assignment_id=%s
+             AND (s.ai_grade IS NOT NULL OR s.teacher_grade IS NOT NULL)
+           GROUP BY s.student_id, u.full_name
+           ORDER BY final_score DESC''',
+        (assignment_id,)
+    )
+    rows = cursor.fetchall()
+    current_user = session['user_id']
+
+    assignment_leaderboard = []
+    for row in rows:
+        sc = float(row['final_score'] or 0)
+        grade = _grade_label(sc)
+        assignment_leaderboard.append({
+            'display_name': row['full_name'] if row['student_id'] == current_user else f"Student #{row['student_id']}",
+            'avg_score': round(sc, 1),
+            'grade': grade,
+            'submission_count': row['submission_count'],
+            'is_you': row['student_id'] == current_user,
+        })
+
+    # Project leaderboard for this classroom
+    cursor.execute(
+        '''SELECT s.student_id, u.full_name,
+              COALESCE(s.score, 0) AS final_score,
+              s.grade, s.rejected
+           FROM project_submissions s
+           JOIN users u ON s.student_id = u.id
+           JOIN projects p ON s.project_id = p.id
+           WHERE p.classroom_id=%s
+           ORDER BY final_score DESC''',
+        (classroom_id,)
+    )
+    proj_rows = cursor.fetchall()
+    project_leaderboard = []
+    for row in proj_rows:
+        sc = float(row['final_score'] or 0)
+        project_leaderboard.append({
+            'display_name': row['full_name'] if row['student_id'] == current_user else f"Student #{row['student_id']}",
+            'score': round(sc, 1),
+            'grade': row['grade'] or _grade_label(sc),
+            'rejected': bool(row['rejected']),
+            'is_you': row['student_id'] == current_user,
+        })
+
+    return render_template('assignments/leaderboard.html',
+                           classroom=classroom,
+                           classroom_id=classroom_id,
+                           assignment_leaderboard=assignment_leaderboard,
+                           project_leaderboard=project_leaderboard)
