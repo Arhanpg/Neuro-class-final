@@ -137,25 +137,20 @@ def _extract_section(feedback: str, start_key: str, end_keys: list) -> str:
     pos = upper_fb.find(start_key_clean)
     if pos < 0:
         return ''
-    # Find end
     end_pos = len(feedback)
     for ek in end_keys:
         ek_clean = ek.upper().replace(' ', '').replace('_', '')
         ep = upper_fb.find(ek_clean, pos + len(start_key_clean))
         if ep > pos and ep < end_pos:
             end_pos = ep
-    # Map clean pos back to original (approximate via line scan)
     chunk = feedback[pos:end_pos]
-    # Strip the key itself from first line
     lines = chunk.splitlines()
     result_lines = []
     for i, ln in enumerate(lines):
         if i == 0:
-            # Remove the key label
             colon_idx = ln.find(':')
             if colon_idx >= 0:
                 result_lines.append(ln[colon_idx+1:].strip())
-            # else skip label line, content starts next line
         else:
             result_lines.append(ln)
     return '\n'.join(result_lines).strip()
@@ -179,16 +174,16 @@ def create_assignment(classroom_id):
         return redirect(url_for('teacher_dashboard'))
 
     if request.method == 'POST':
-        title         = _sanitize(request.form.get('title', '').strip())
-        due_date      = request.form.get('due_date') or None
-        max_marks     = int(request.form.get('max_marks', 100))
-        max_attempts  = int(request.form.get('max_attempts', 1))
-        visibility    = request.form.get('visibility', 'published')
-        rubric        = _sanitize(request.form.get('rubric', '').strip())
-        assign_text   = _sanitize(request.form.get('assign_text', '').strip())
-        source_label  = request.form.get('source_label', 'text')
-        ai_model      = request.form.get('ai_model', 'auto')
-        strictness    = request.form.get('strictness', 'balanced')
+        title          = _sanitize(request.form.get('title', '').strip())
+        due_date       = request.form.get('due_date') or None
+        max_marks      = int(request.form.get('max_marks', 100))
+        max_attempts   = int(request.form.get('max_attempts', 1))
+        visibility     = request.form.get('visibility', 'published')
+        rubric         = _sanitize(request.form.get('rubric', '').strip())
+        assign_text    = _sanitize(request.form.get('assign_text', '').strip())
+        source_label   = request.form.get('source_label', 'text')
+        ai_model       = request.form.get('ai_model', 'auto')
+        strictness     = request.form.get('strictness', 'balanced')
         feedback_style = request.form.get('feedback_style', 'detailed')
 
         if not title:
@@ -197,6 +192,10 @@ def create_assignment(classroom_id):
         if not rubric:
             flash('Rubric is required — the AI needs it to grade submissions.', 'danger')
             return render_template('assignments/create.html', classroom=classroom)
+
+        # Merge rubric into description so the AI can read it later
+        # Format: "RUBRIC:\n<rubric>\n\nASSIGNMENT:\n<assign_text>"
+        description = f"RUBRIC:\n{rubric}\n\nASSIGNMENT:\n{assign_text}"
 
         # Handle file upload
         if source_label == 'file' and 'assign_file' in request.files:
@@ -207,20 +206,48 @@ def create_assignment(classroom_id):
                 fn = f'{uuid.uuid4().hex}_{secure_filename(f.filename)}'
                 f.save(str(save_dir / fn))
                 assign_text = f'[FILE: {fn}]'
+                description = f"RUBRIC:\n{rubric}\n\nASSIGNMENT:\n{assign_text}"
 
-        cursor.execute(
-            '''INSERT INTO assignments
-               (classroom_id, title, description, rubric, assign_text, source_label,
-                due_date, max_marks, max_attempts, visibility, ai_model, strictness, feedback_style)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-            (classroom_id, title, assign_text, rubric, assign_text, source_label,
-             due_date, max_marks, max_attempts, visibility, ai_model, strictness, feedback_style)
-        )
+        # Check which columns exist in the assignments table and insert accordingly
+        try:
+            # Try with rubric column first (if it exists in the DB)
+            cursor.execute(
+                '''INSERT INTO assignments
+                   (classroom_id, title, description, rubric, assign_text, source_label,
+                    due_date, max_marks, max_attempts, visibility, ai_model, strictness, feedback_style)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                (classroom_id, title, description, rubric, assign_text, source_label,
+                 due_date, max_marks, max_attempts, visibility, ai_model, strictness, feedback_style)
+            )
+        except MySQLdb.OperationalError as e:
+            if 'rubric' in str(e).lower() or '1054' in str(e):
+                # rubric column doesn't exist — insert without it
+                _rollback_safe()
+                cursor2 = _cursor()
+                cursor2.execute(
+                    '''INSERT INTO assignments
+                       (classroom_id, title, description, assign_text, source_label,
+                        due_date, max_marks, max_attempts, visibility)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                    (classroom_id, title, description, assign_text, source_label,
+                     due_date, max_marks, max_attempts, visibility)
+                )
+            else:
+                raise
+
         _commit()
         flash(f'Assignment "{title}" created! Students can now submit.', 'success')
         return redirect(url_for('view_classroom', classroom_id=classroom_id))
 
     return render_template('assignments/create.html', classroom=classroom)
+
+
+def _rollback_safe():
+    try:
+        from app import mysql
+        mysql.connection.rollback()
+    except Exception:
+        pass
 
 
 # ═══════════════════════════════════════════════════════════
@@ -254,13 +281,28 @@ def edit_assignment(classroom_id, assignment_id):
         visibility   = request.form.get('visibility', 'published')
         rubric       = _sanitize(request.form.get('rubric', ''))
         assign_text  = _sanitize(request.form.get('assign_text', ''))
+        description  = f"RUBRIC:\n{rubric}\n\nASSIGNMENT:\n{assign_text}"
 
-        cursor.execute(
-            '''UPDATE assignments SET title=%s, description=%s, rubric=%s, assign_text=%s,
-               due_date=%s, max_marks=%s, max_attempts=%s, visibility=%s WHERE id=%s''',
-            (title, assign_text, rubric, assign_text, due_date,
-             max_marks, max_attempts, visibility, assignment_id)
-        )
+        try:
+            cursor.execute(
+                '''UPDATE assignments SET title=%s, description=%s, rubric=%s, assign_text=%s,
+                   due_date=%s, max_marks=%s, max_attempts=%s, visibility=%s WHERE id=%s''',
+                (title, description, rubric, assign_text, due_date,
+                 max_marks, max_attempts, visibility, assignment_id)
+            )
+        except MySQLdb.OperationalError as e:
+            if 'rubric' in str(e).lower() or '1054' in str(e):
+                _rollback_safe()
+                cursor2 = _cursor()
+                cursor2.execute(
+                    '''UPDATE assignments SET title=%s, description=%s, assign_text=%s,
+                       due_date=%s, max_marks=%s, max_attempts=%s, visibility=%s WHERE id=%s''',
+                    (title, description, assign_text, due_date,
+                     max_marks, max_attempts, visibility, assignment_id)
+                )
+            else:
+                raise
+
         _commit()
         flash('Assignment updated.', 'success')
         return redirect(url_for('view_classroom', classroom_id=classroom_id))
@@ -322,7 +364,6 @@ def assignment_submissions(classroom_id, assignment_id):
     )
     submissions = cursor.fetchall()
 
-    # Attach parsed criteria to each submission for quick preview
     for sub in submissions:
         sub['parsed_criteria'] = _parse_criteria(sub.get('ai_feedback', '') or '')
 
@@ -421,6 +462,7 @@ def classroom_analytics(classroom_id):
         total_students = r['total_students'] or 1
         pct = round((r['sub_count'] / total_students) * 100, 1)
         per_assignment.append({
+            'id':             r['id'],
             'title':          r['title'],
             'sub_count':      r['sub_count'],
             'avg_score':      r['avg_score'],
@@ -428,7 +470,9 @@ def classroom_analytics(classroom_id):
         })
 
     return render_template('assignments/analytics.html',
-                           classroom=classroom, stats=stats, per_assignment=per_assignment)
+                           classroom=classroom, stats=stats,
+                           per_assignment=per_assignment,
+                           classroom_id=classroom_id)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -489,7 +533,6 @@ def submit_assignment_v2(classroom_id, assignment_id):
     if not assignment:
         return jsonify({'ok': False, 'error': 'Assignment not found'}), 404
 
-    # Block resubmission if locked
     cursor.execute(
         'SELECT id, locked FROM assignment_submissions WHERE assignment_id=%s AND student_id=%s',
         (assignment_id, session['user_id'])
@@ -529,13 +572,16 @@ def submit_assignment_v2(classroom_id, assignment_id):
     sub_id = cursor.lastrowid
     _commit()
 
-    # Build rubric string
-    rubric_parts = []
-    if assignment.get('rubric'):
-        rubric_parts.append(assignment['rubric'])
+    # Extract rubric — try dedicated column, fall back to description field
+    raw_desc = assignment.get('description', '') or ''
+    if 'RUBRIC:' in raw_desc.upper():
+        # Parse out just the RUBRIC section from merged description
+        rubric_extracted = raw_desc.split('ASSIGNMENT:')[0].replace('RUBRIC:', '').strip()
+    else:
+        rubric_extracted = assignment.get('rubric', '') or raw_desc
+
+    rubric_parts = [rubric_extracted] if rubric_extracted else []
     rubric_parts.append(f"Title: {assignment['title']}")
-    if assignment.get('description'):
-        rubric_parts.append(f"Description: {assignment['description']}")
     rubric_parts.append(f"Max marks: {assignment['max_marks']}")
     rubric = _sanitize('\n'.join(rubric_parts))
 
@@ -546,26 +592,21 @@ def submit_assignment_v2(classroom_id, assignment_id):
         """
         Background thread — runs notebook LangGraph pipeline:
         node_extract → node_relevance_check → node_evaluate → node_lock
-        Stores CRITERIONBREAKDOWN, SCORE, GRADE, STRENGTHS, WEAKNESSES,
-        IMPROVEMENTSUGGESTIONS, DETAILEDFEEDBACK into ai_feedback column.
         """
         db = None
         try:
             from ai_engine import evaluate_assignment, evaluate_project
 
             if file_path_str:
-                # Assignment PDF pipeline
                 result = evaluate_assignment(
                     submission_pdf=file_path_str,
                     rubric=rubric,
                     course_id=course_id_str,
                     student_id=student_id_str
                 )
-                # Result keys from notebook: score, feedback, locked
                 score    = float(result.get('score', 0))
                 feedback = _sanitize(str(result.get('feedback', '') or result.get('evaluation', '')))
             else:
-                # GitHub project pipeline
                 result = evaluate_project(
                     repo_url=github_url,
                     project_rubric=rubric,
@@ -607,7 +648,6 @@ def submit_assignment_v2(classroom_id, assignment_id):
     t = threading.Thread(target=_grade_thread, daemon=True)
     t.start()
 
-    # ✔ Return sub_id so the frontend can poll /submission/<sub_id>/status
     return jsonify({
         'ok':     True,
         'sub_id': sub_id,
@@ -616,7 +656,7 @@ def submit_assignment_v2(classroom_id, assignment_id):
 
 
 # ═══════════════════════════════════════════════════════════
-#  AJAX — Poll grading status (used by result.html)
+#  AJAX — Poll grading status
 # ═══════════════════════════════════════════════════════════
 
 @assignments_bp.route('/submission/<int:sub_id>/status')
@@ -636,10 +676,10 @@ def submission_status(sub_id):
     error  = bool(row.get('ai_feedback', '') and
                   str(row.get('ai_feedback', '')).startswith('GRADING ERROR'))
     return jsonify({
-        'graded':    graded,
-        'error':     error,
-        'score':     row['ai_grade'],
-        'label':     row['ai_grade_label'],
+        'graded': graded,
+        'error':  error,
+        'score':  row['ai_grade'],
+        'label':  row['ai_grade_label'],
     })
 
 
@@ -654,8 +694,8 @@ def submission_result(sub_id):
 
     cursor = _cursor()
     cursor.execute(
-        '''SELECT s.*, a.title AS assignment_title, a.rubric, a.classroom_id,
-                  a.max_marks, u.full_name
+        '''SELECT s.*, a.title AS assignment_title, a.description AS assignment_desc,
+                  a.classroom_id, a.max_marks, u.full_name
            FROM assignment_submissions s
            JOIN assignments a ON s.assignment_id = a.id
            JOIN users u ON s.student_id = u.id
@@ -667,20 +707,19 @@ def submission_result(sub_id):
         flash('Submission not found.', 'danger')
         return redirect(url_for('dashboard'))
 
-    # Only the owning student (or a teacher) may view
     if sub['student_id'] != session['user_id'] and session.get('role') != 'instructor':
         abort(403)
 
-    feedback   = sub.get('ai_feedback', '') or ''
-    criteria   = _parse_criteria(feedback)
+    feedback    = sub.get('ai_feedback', '') or ''
+    criteria    = _parse_criteria(feedback)
     suggestions = _parse_suggestions(feedback)
-    strengths  = _extract_section(feedback, 'STRENGTHS',
-                                  ['WEAKNESSES', 'IMPROVEMENTSUGGESTIONS',
-                                   'IMPROVEMENT_SUGGESTIONS', 'DETAILEDFEEDBACK', 'DETAILED_FEEDBACK'])
-    weaknesses = _extract_section(feedback, 'WEAKNESSES',
-                                  ['IMPROVEMENTSUGGESTIONS', 'IMPROVEMENT_SUGGESTIONS',
-                                   'DETAILEDFEEDBACK', 'DETAILED_FEEDBACK'])
-    detailed   = _extract_section(feedback, 'DETAILEDFEEDBACK', [])
+    strengths   = _extract_section(feedback, 'STRENGTHS',
+                                   ['WEAKNESSES', 'IMPROVEMENTSUGGESTIONS',
+                                    'IMPROVEMENT_SUGGESTIONS', 'DETAILEDFEEDBACK', 'DETAILED_FEEDBACK'])
+    weaknesses  = _extract_section(feedback, 'WEAKNESSES',
+                                   ['IMPROVEMENTSUGGESTIONS', 'IMPROVEMENT_SUGGESTIONS',
+                                    'DETAILEDFEEDBACK', 'DETAILED_FEEDBACK'])
+    detailed    = _extract_section(feedback, 'DETAILEDFEEDBACK', [])
     if not detailed:
         detailed = _extract_section(feedback, 'DETAILED_FEEDBACK', [])
 
@@ -696,7 +735,7 @@ def submission_result(sub_id):
 
 
 # ═══════════════════════════════════════════════════════════
-#  LEADERBOARD  (visible to both students and teachers)
+#  LEADERBOARD  (per-assignment, visible to both students and teachers)
 # ═══════════════════════════════════════════════════════════
 
 @assignments_bp.route('/classroom/<int:classroom_id>/assignment/<int:assignment_id>/leaderboard')
@@ -734,7 +773,6 @@ def assignment_leaderboard(classroom_id, assignment_id):
     for rank, r in enumerate(rows, 1):
         is_you = r['student_id'] == session['user_id']
         score  = round(float(r['final_score'] or 0), 1)
-        # Teachers see all names; students see own name, others anonymised
         if is_teacher or is_you:
             display_name = r['full_name']
         else:
