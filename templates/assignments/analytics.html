@@ -17,7 +17,10 @@
     <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn btn-outline-secondary btn-sm">← Back</a>
     <h2 class="mb-0 fw-bold">📈 Analytics</h2>
     <span class="badge bg-primary">{{ classroom.name }}</span>
-    <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=classroom.id) }}" class="btn btn-sm btn-outline-warning ms-auto">🏆 Leaderboard</a>
+    {# Leaderboard link only shown when at least one assignment exists #}
+    {% if per_assignment %}
+    <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=classroom.id, assignment_id=per_assignment[0].id) }}" class="btn btn-sm btn-outline-warning ms-auto">🏆 Leaderboard</a>
+    {% endif %}
   </div>
 
   <!-- KPI Cards -->
@@ -78,7 +81,7 @@
           {% for a in per_assignment %}
           <div class="nc-assign-row">
             <div style="width:160px;flex-shrink:0">
-              <div class="fw-semibold" style="font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.title }}</div>
+              <a href="{{ url_for('assignments.assignment_leaderboard', classroom_id=classroom.id, assignment_id=a.id) }}" class="fw-semibold text-decoration-none" style="font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">{{ a.title }}</a>
               <div class="text-muted" style="font-size:.78rem">{{ a.sub_count }} submissions</div>
             </div>
             <div class="nc-completion-bar">
