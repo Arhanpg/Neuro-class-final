@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block title %}{{ classroom.name }} — NeuroClass{% endblock %}
+{% block content %}
+<div class="dashboard-wrapper">
+    <div class="classroom-view-header">
+        <div class="classroom-view-info">
+            <a href="{{ url_for('dashboard') }}" class="back-link">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+                Dashboard
+            </a>
+            <h1>{{ classroom.name }}</h1>
+            {% if classroom.subject %}<span class="subject-badge large">{{ classroom.subject }}</span>{% endif %}
+            {% if classroom.description %}<p class="classroom-desc">{{ classroom.description }}</p>{% endif %}
+            <p class="text-muted">Instructor: <strong>{{ classroom.instructor_name }}</strong></p>
+        </div>
+        {% if session.role == 'instructor' %}
+        <div class="classroom-code-display">
+            <span class="code-label">SHARE CODE</span>
+            <span class="code-large">{{ classroom.code }}</span>
+            <button class="btn btn-outline btn-sm" onclick="copyCode('{{ classroom.code }}')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                Copy Code
+            </button>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="classroom-tabs">
+        <div class="tab-list">
+            <button class="tab active" onclick="switchTab(this, 'overview')">Overview</button>
+            <button class="tab" onclick="switchTab(this, 'members')">Members ({{ members|length }})</button>
+            <button class="tab coming-soon" disabled>&#129504; AI Chatbot <span class="badge-soon">Soon</span></button>
+            <button class="tab coming-soon" disabled>&#128196; Assignments <span class="badge-soon">Soon</span></button>
+            <button class="tab coming-soon" disabled>&#127941; Leaderboard <span class="badge-soon">Soon</span></button>
+        </div>
+
+        <div id="tab-overview" class="tab-panel active">
+            <div class="info-cards-row">
+                <div class="info-card">
+                    <div class="info-card-value">{{ members|length }}</div>
+                    <div class="info-card-label">Students Enrolled</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-card-value">{{ classroom.code }}</div>
+                    <div class="info-card-label">Class Code</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-card-value">{{ classroom.created_at.strftime('%b %Y') }}</div>
+                    <div class="info-card-label">Created</div>
+                </div>
+            </div>
+            <div class="coming-soon-section">
+                <div class="cs-feature">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                    <div><strong>AI Chatbot</strong><p>RAG-powered tutor trained on your lecture notes</p></div>
+                </div>
+                <div class="cs-feature">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+                    <div><strong>Assignments & Grading</strong><p>AI-graded submissions with leaderboard</p></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-members" class="tab-panel">
+            {% if members %}
+            <div class="members-table-wrap">
+                <table class="members-table">
+                    <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Joined</th></tr></thead>
+                    <tbody>
+                    {% for m in members %}
+                    <tr>
+                        <td class="text-muted">{{ loop.index }}</td>
+                        <td><strong>{{ m.full_name }}</strong></td>
+                        <td class="text-muted">{{ m.email }}</td>
+                        <td class="text-muted">{{ m.joined_at.strftime('%b %d, %Y') }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state small">
+                <p>No students have joined yet. Share the code <strong>{{ classroom.code }}</strong> with your class.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+function switchTab(btn, tabId) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + tabId).classList.add('active');
+}
+</script>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}Join Classroom — NeuroClass{% endblock %}
+{% block content %}
+<div class="auth-wrapper">
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="auth-role-icon student-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
+            </div>
+            <h2>Join a Classroom</h2>
+            <p class="auth-subtitle">Enter the code shared by your instructor</p>
+        </div>
+
+        <form method="POST" class="auth-form">
+            <div class="form-group">
+                <label for="code">Classroom Code</label>
+                <input type="text" id="code" name="code" required placeholder="e.g., AB12CD34" maxlength="12"
+                    style="text-transform: uppercase; letter-spacing: 0.2em; font-size: var(--text-lg); text-align: center; font-weight: 600;"
+                    oninput="this.value = this.value.toUpperCase()">
+                <span class="form-hint">8-character code from your instructor</span>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-full">Join Class</button>
+        </form>
+
+        <div class="auth-footer">
+            <p><a href="{{ url_for('student_dashboard') }}">← Back to Dashboard</a></p>
+        </div>
+    </div>
+</div>
+{% endblock %}

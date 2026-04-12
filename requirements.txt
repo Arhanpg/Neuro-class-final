@@ -1,1 +1,4 @@
 flask>=3.0.0
+flask-mysqldb>=2.0.0
+MySQLdb
+Werkzeug>=3.0.0

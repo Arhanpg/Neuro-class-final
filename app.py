@@ -1,199 +1,314 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
-import uuid
-import json
-import os
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask_mysqldb import MySQL
+import MySQLdb.cursors
 import hashlib
-from datetime import datetime
-from functools import wraps
+import os
+import random
+import string
+from config import Config
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "neuroclass-dev-secret-2024")
+app.config.from_object(Config)
 
-# ── In-memory data stores (replace with Supabase/DB later) ──────────────────────────────────
-USERS = {}       # {user_id: {id, name, email, password_hash, role}}
-CLASSES = {}     # {class_id: {id, code, name, subject, teacher_id, students: []}}
-MEMBERSHIPS = {} # {user_id: [class_id, ...]}
+# MySQL config
+app.config['MYSQL_HOST'] = Config.MYSQL_HOST
+app.config['MYSQL_USER'] = Config.MYSQL_USER
+app.config['MYSQL_PASSWORD'] = Config.MYSQL_PASSWORD
+app.config['MYSQL_DB'] = Config.MYSQL_DB
 
-def hash_password(pw: str) -> str:
-    return hashlib.sha256(pw.encode()).hexdigest()
+mysql = MySQL(app)
 
-def generate_class_code() -> str:
-    return uuid.uuid4().hex[:7].upper()
+os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
 
-def login_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if "user_id" not in session:
-            return redirect(url_for("login"))
-        return f(*args, **kwargs)
-    return decorated
 
-def get_current_user():
-    uid = session.get("user_id")
-    return USERS.get(uid)
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-# ── Auth routes ───────────────────────────────────────────────────────────────────────
 
-@app.route("/")
+def generate_classroom_code(length=8):
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+
+def login_required(role=None):
+    """Decorator to require login, optionally with a specific role."""
+    from functools import wraps
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                flash('Please log in to continue.', 'warning')
+                return redirect(url_for('login'))
+            if role and session.get('role') != role:
+                flash('Unauthorized access.', 'danger')
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
+# ─── LANDING ────────────────────────────────────────────────────────────────
+
+@app.route('/')
 def index():
-    if "user_id" in session:
-        user = get_current_user()
-        if user and user["role"] == "instructor":
-            return redirect(url_for("instructor_dashboard"))
-        return redirect(url_for("student_dashboard"))
-    return render_template("landing.html")
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    return render_template('index.html')
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
-        password = request.form.get("password", "")
-        role = request.form.get("role", "student")
-        pw_hash = hash_password(password)
-        user = next(
-            (u for u in USERS.values()
-             if u["email"] == email and u["password_hash"] == pw_hash and u["role"] == role),
-            None
-        )
-        if user:
-            session["user_id"] = user["id"]
-            session["role"] = user["role"]
-            flash("Welcome back, " + user["name"] + "!", "success")
-            return redirect(url_for("instructor_dashboard" if role == "instructor" else "student_dashboard"))
-        flash("Invalid credentials or role. Please check your details.", "error")
-    return render_template("auth.html", mode="login")
 
-@app.route("/register", methods=["GET", "POST"])
+# ─── AUTH ────────────────────────────────────────────────────────────────────
+
+@app.route('/register', methods=['GET', 'POST'])
 def register():
-    if request.method == "POST":
-        name  = request.form.get("name", "").strip()
-        email = request.form.get("email", "").strip().lower()
-        password = request.form.get("password", "")
-        role  = request.form.get("role", "student")
-        if any(u["email"] == email for u in USERS.values()):
-            flash("An account with that email already exists.", "error")
-            return render_template("auth.html", mode="register")
-        uid = str(uuid.uuid4())
-        USERS[uid] = {
-            "id": uid, "name": name, "email": email,
-            "password_hash": hash_password(password),
-            "role": role, "created_at": datetime.utcnow().isoformat()
-        }
-        MEMBERSHIPS[uid] = []
-        session["user_id"] = uid
-        session["role"] = role
-        flash("Account created! Welcome to NeuroClass.", "success")
-        return redirect(url_for("instructor_dashboard" if role == "instructor" else "student_dashboard"))
-    return render_template("auth.html", mode="register")
+    role = request.args.get('role', 'student')  # 'student' or 'instructor'
+    if role not in ('student', 'instructor'):
+        role = 'student'
 
-@app.route("/logout")
+    if request.method == 'POST':
+        full_name = request.form.get('full_name', '').strip()
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        confirm = request.form.get('confirm_password', '')
+        role = request.form.get('role', 'student')
+
+        # Validations
+        if not all([full_name, email, password, confirm]):
+            flash('All fields are required.', 'danger')
+            return render_template('auth/register.html', role=role)
+
+        if password != confirm:
+            flash('Passwords do not match.', 'danger')
+            return render_template('auth/register.html', role=role)
+
+        if len(password) < 6:
+            flash('Password must be at least 6 characters.', 'danger')
+            return render_template('auth/register.html', role=role)
+
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+        if cursor.fetchone():
+            flash('An account with this email already exists.', 'danger')
+            return render_template('auth/register.html', role=role)
+
+        hashed = hash_password(password)
+        cursor.execute(
+            'INSERT INTO users (full_name, email, password_hash, role) VALUES (%s, %s, %s, %s)',
+            (full_name, email, hashed, role)
+        )
+        mysql.connection.commit()
+        flash('Account created! Please log in.', 'success')
+        return redirect(url_for('login', role=role))
+
+    return render_template('auth/register.html', role=role)
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    role = request.args.get('role', 'student')
+    if role not in ('student', 'instructor'):
+        role = 'student'
+
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        role = request.form.get('role', 'student')
+
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('SELECT * FROM users WHERE email = %s AND role = %s', (email, role))
+        user = cursor.fetchone()
+
+        if user and user['password_hash'] == hash_password(password):
+            session['user_id'] = user['id']
+            session['full_name'] = user['full_name']
+            session['email'] = user['email']
+            session['role'] = user['role']
+            flash(f'Welcome back, {user["full_name"]}!', 'success')
+            return redirect(url_for('dashboard'))
+        else:
+            flash('Invalid email or password.', 'danger')
+
+    return render_template('auth/login.html', role=role)
+
+
+@app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for("index"))
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('index'))
 
-# ── Instructor routes ────────────────────────────────────────────────────────────────────
 
-@app.route("/instructor/dashboard")
-@login_required
-def instructor_dashboard():
-    user = get_current_user()
-    if user["role"] != "instructor":
-        return redirect(url_for("student_dashboard"))
-    my_classes = [c for c in CLASSES.values() if c["teacher_id"] == user["id"]]
-    return render_template("instructor_dashboard.html", user=user, classes=my_classes)
+# ─── DASHBOARD ──────────────────────────────────────────────────────────────
 
-@app.route("/instructor/create-class", methods=["POST"])
-@login_required
-def create_class():
-    user = get_current_user()
-    if user["role"] != "instructor":
-        return jsonify({"error": "Unauthorized"}), 403
-    name    = request.form.get("name", "").strip()
-    subject = request.form.get("subject", "").strip()
-    if not name:
-        flash("Class name is required.", "error")
-        return redirect(url_for("instructor_dashboard"))
-    cid  = str(uuid.uuid4())
-    code = generate_class_code()
-    while any(c["code"] == code for c in CLASSES.values()):
-        code = generate_class_code()
-    CLASSES[cid] = {
-        "id": cid, "code": code, "name": name, "subject": subject,
-        "teacher_id": user["id"], "teacher_name": user["name"],
-        "students": [], "created_at": datetime.utcnow().isoformat()
-    }
-    if cid not in MEMBERSHIPS:
-        MEMBERSHIPS[cid] = []
-    flash(f"Classroom '{name}' created! Share code: {code}", "success")
-    return redirect(url_for("instructor_dashboard"))
+@app.route('/dashboard')
+def dashboard():
+    if 'user_id' not in session:
+        return redirect(url_for('index'))
+    if session['role'] == 'instructor':
+        return redirect(url_for('teacher_dashboard'))
+    return redirect(url_for('student_dashboard'))
 
-@app.route("/instructor/class/<class_id>")
-@login_required
-def instructor_class_detail(class_id):
-    user = get_current_user()
-    cls  = CLASSES.get(class_id)
-    if not cls or cls["teacher_id"] != user["id"]:
-        flash("Classroom not found.", "error")
-        return redirect(url_for("instructor_dashboard"))
-    students = [USERS[sid] for sid in cls["students"] if sid in USERS]
-    return render_template("instructor_class.html", user=user, cls=cls, students=students)
 
-# ── Student routes ─────────────────────────────────────────────────────────────────────
+@app.route('/dashboard/teacher')
+@login_required(role='instructor')
+def teacher_dashboard():
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        'SELECT * FROM classrooms WHERE instructor_id = %s ORDER BY created_at DESC',
+        (session['user_id'],)
+    )
+    classrooms = cursor.fetchall()
+    # Fetch student count per classroom
+    for c in classrooms:
+        cursor.execute(
+            'SELECT COUNT(*) as cnt FROM classroom_members WHERE classroom_id = %s',
+            (c['id'],)
+        )
+        c['student_count'] = cursor.fetchone()['cnt']
+    return render_template('dashboard/teacher.html', classrooms=classrooms)
 
-@app.route("/student/dashboard")
-@login_required
+
+@app.route('/dashboard/student')
+@login_required(role='student')
 def student_dashboard():
-    user = get_current_user()
-    if user["role"] != "student":
-        return redirect(url_for("instructor_dashboard"))
-    my_class_ids = MEMBERSHIPS.get(user["id"], [])
-    my_classes = [CLASSES[cid] for cid in my_class_ids if cid in CLASSES]
-    return render_template("student_dashboard.html", user=user, classes=my_classes)
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        '''SELECT c.*, u.full_name as instructor_name 
+           FROM classrooms c 
+           JOIN classroom_members cm ON c.id = cm.classroom_id
+           JOIN users u ON c.instructor_id = u.id
+           WHERE cm.user_id = %s
+           ORDER BY cm.joined_at DESC''',
+        (session['user_id'],)
+    )
+    classrooms = cursor.fetchall()
+    return render_template('dashboard/student.html', classrooms=classrooms)
 
-@app.route("/student/join-class", methods=["POST"])
-@login_required
-def join_class():
-    user = get_current_user()
-    if user["role"] != "student":
-        return jsonify({"error": "Unauthorized"}), 403
-    code = request.form.get("code", "").strip().upper()
-    cls  = next((c for c in CLASSES.values() if c["code"] == code), None)
-    if not cls:
-        flash("Invalid classroom code. Please try again.", "error")
-        return redirect(url_for("student_dashboard"))
-    if user["id"] in cls["students"]:
-        flash("You are already enrolled in this classroom.", "info")
-        return redirect(url_for("student_dashboard"))
-    cls["students"].append(user["id"])
-    if user["id"] not in MEMBERSHIPS:
-        MEMBERSHIPS[user["id"]] = []
-    MEMBERSHIPS[user["id"]].append(cls["id"])
-    flash(f"Successfully joined '{cls['name']}'!", "success")
-    return redirect(url_for("student_dashboard"))
 
-@app.route("/student/class/<class_id>")
-@login_required
-def student_class_detail(class_id):
-    user = get_current_user()
-    cls  = CLASSES.get(class_id)
-    if not cls or user["id"] not in cls["students"]:
-        flash("Classroom not found or you are not enrolled.", "error")
-        return redirect(url_for("student_dashboard"))
-    teacher = USERS.get(cls["teacher_id"])
-    return render_template("student_class.html", user=user, cls=cls, teacher=teacher)
+# ─── CLASSROOM ───────────────────────────────────────────────────────────────
 
-# ── API helpers ────────────────────────────────────────────────────────────────────────
+@app.route('/classroom/create', methods=['GET', 'POST'])
+@login_required(role='instructor')
+def create_classroom():
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        description = request.form.get('description', '').strip()
+        subject = request.form.get('subject', '').strip()
 
-@app.route("/api/class/<class_id>/students")
-@login_required
-def api_class_students(class_id):
-    user = get_current_user()
-    cls  = CLASSES.get(class_id)
-    if not cls or cls["teacher_id"] != user["id"]:
-        return jsonify({"error": "Unauthorized"}), 403
-    students = [{"id": USERS[s]["id"], "name": USERS[s]["name"], "email": USERS[s]["email"]}
-                for s in cls["students"] if s in USERS]
-    return jsonify({"students": students, "count": len(students)})
+        if not name:
+            flash('Classroom name is required.', 'danger')
+            return render_template('classroom/create.html')
 
-if __name__ == "__main__":
+        # Generate unique code
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        while True:
+            code = generate_classroom_code()
+            cursor.execute('SELECT id FROM classrooms WHERE code = %s', (code,))
+            if not cursor.fetchone():
+                break
+
+        cursor.execute(
+            'INSERT INTO classrooms (name, description, subject, code, instructor_id) VALUES (%s, %s, %s, %s, %s)',
+            (name, description, subject, code, session['user_id'])
+        )
+        mysql.connection.commit()
+        flash(f'Classroom "{name}" created! Share the code: {code}', 'success')
+        return redirect(url_for('teacher_dashboard'))
+
+    return render_template('classroom/create.html')
+
+
+@app.route('/classroom/join', methods=['GET', 'POST'])
+@login_required(role='student')
+def join_classroom():
+    if request.method == 'POST':
+        code = request.form.get('code', '').strip().upper()
+
+        if not code:
+            flash('Please enter a classroom code.', 'danger')
+            return render_template('classroom/join.html')
+
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute(
+            'SELECT c.*, u.full_name as instructor_name FROM classrooms c JOIN users u ON c.instructor_id = u.id WHERE c.code = %s',
+            (code,)
+        )
+        classroom = cursor.fetchone()
+
+        if not classroom:
+            flash('Invalid classroom code. Please check and try again.', 'danger')
+            return render_template('classroom/join.html')
+
+        # Check if already joined
+        cursor.execute(
+            'SELECT id FROM classroom_members WHERE classroom_id = %s AND user_id = %s',
+            (classroom['id'], session['user_id'])
+        )
+        if cursor.fetchone():
+            flash('You have already joined this classroom.', 'info')
+            return redirect(url_for('student_dashboard'))
+
+        cursor.execute(
+            'INSERT INTO classroom_members (classroom_id, user_id) VALUES (%s, %s)',
+            (classroom['id'], session['user_id'])
+        )
+        mysql.connection.commit()
+        flash(f'Successfully joined "{classroom["name"]}"!', 'success')
+        return redirect(url_for('student_dashboard'))
+
+    return render_template('classroom/join.html')
+
+
+@app.route('/classroom/<int:classroom_id>')
+def view_classroom(classroom_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute(
+        'SELECT c.*, u.full_name as instructor_name FROM classrooms c JOIN users u ON c.instructor_id = u.id WHERE c.id = %s',
+        (classroom_id,)
+    )
+    classroom = cursor.fetchone()
+    if not classroom:
+        flash('Classroom not found.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    # Access check
+    if session['role'] == 'instructor' and classroom['instructor_id'] != session['user_id']:
+        flash('Unauthorized.', 'danger')
+        return redirect(url_for('dashboard'))
+    if session['role'] == 'student':
+        cursor.execute(
+            'SELECT id FROM classroom_members WHERE classroom_id = %s AND user_id = %s',
+            (classroom_id, session['user_id'])
+        )
+        if not cursor.fetchone():
+            flash('You are not a member of this classroom.', 'danger')
+            return redirect(url_for('student_dashboard'))
+
+    # Fetch members
+    cursor.execute(
+        '''SELECT u.full_name, u.email, cm.joined_at 
+           FROM classroom_members cm JOIN users u ON cm.user_id = u.id 
+           WHERE cm.classroom_id = %s ORDER BY cm.joined_at''',
+        (classroom_id,)
+    )
+    members = cursor.fetchall()
+
+    return render_template('classroom/view.html', classroom=classroom, members=members)
+
+
+# ─── API ─────────────────────────────────────────────────────────────────────
+
+@app.route('/api/classroom/<int:classroom_id>/code', methods=['GET'])
+@login_required(role='instructor')
+def get_classroom_code(classroom_id):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT code FROM classrooms WHERE id = %s AND instructor_id = %s', (classroom_id, session['user_id']))
+    classroom = cursor.fetchone()
+    if not classroom:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({'code': classroom['code']})
+
+
+if __name__ == '__main__':
     app.run(debug=True, port=5000)
