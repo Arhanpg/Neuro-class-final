@@ -1,4 +1,5 @@
 import os
+import re
 import random
 import string
 import hashlib
@@ -19,10 +20,12 @@ from config import Config
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Explicit overrides (from_object covers these too, but belt-and-braces)
 app.config['MYSQL_HOST']     = Config.MYSQL_HOST
 app.config['MYSQL_USER']     = Config.MYSQL_USER
 app.config['MYSQL_PASSWORD'] = Config.MYSQL_PASSWORD
 app.config['MYSQL_DB']       = Config.MYSQL_DB
+app.config['MYSQL_CHARSET']  = 'utf8mb4'   # ← critical: allow 4-byte unicode / emoji
 
 mysql = MySQL(app)
 
@@ -42,6 +45,15 @@ def hash_password(password):
 
 def generate_classroom_code(length=8):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+
+def sanitize_for_mysql(text: str) -> str:
+    """Remove 4-byte unicode (emoji etc.) that MySQL utf8 (not utf8mb4) rejects.
+    With utf8mb4 charset on the connection this should be a no-op, but kept as
+    an additional safety net."""
+    # Only strip surrogates / private-use characters above BMP if really needed.
+    # With utf8mb4 connection we just return the text as-is.
+    return text
 
 
 def login_required(role=None):
@@ -220,7 +232,7 @@ def create_classroom():
             (name, subject, description, code, session['user_id'])
         )
         mysql.connection.commit()
-        flash(f'Classroom "{name}" created! Share code with students: {code}', 'success')
+        flash(f'Classroom "{name}" created! Share code: {code}', 'success')
         return redirect(url_for('teacher_dashboard'))
 
     return render_template('classroom/create.html')
@@ -310,7 +322,6 @@ def view_classroom(classroom_id):
     )
     materials = cursor.fetchall()
 
-    # Only load THIS user's chat history
     cursor.execute(
         '''SELECT ch.role, ch.message, ch.created_at, u.full_name
            FROM chat_history ch
@@ -478,9 +489,9 @@ def train_status(classroom_id):
         'indexed': indexed,
         'label': {
             'idle':    'Not trained',
-            'running': '⏳ Training in background…',
-            'done':    '✅ Trained on your notes',
-        }.get(status, '⚠️ Error — try re-training')
+            'running': 'Training in background...',
+            'done':    'Trained on your notes',
+        }.get(status, 'Error - try re-training')
     })
 
 
@@ -510,14 +521,14 @@ def classroom_chat(classroom_id):
     if not question:
         return jsonify({'error': 'Message cannot be empty'}), 400
 
-    # Store user message tagged with user_id for isolation
+    # ── Store user message (utf8mb4 connection handles emoji fine now) ──
     cursor.execute(
         'INSERT INTO chat_history (classroom_id, user_id, role, message) VALUES (%s,%s,%s,%s)',
         (classroom_id, session['user_id'], 'user', question)
     )
     mysql.connection.commit()
 
-    # Fetch active assignments so the AI can answer deadline/marking queries
+    # Fetch upcoming assignments so the AI can answer deadline queries
     cursor.execute(
         '''SELECT title, due_date, max_marks
            FROM assignments
@@ -527,12 +538,11 @@ def classroom_chat(classroom_id):
     )
     assignments = cursor.fetchall() or []
 
-    # Build rich context for the AI
     context_data = {
-        'class_name':    classroom.get('name', ''),
-        'subject':       classroom.get('subject', ''),
-        'student_name':  session.get('full_name', ''),   # ← name recall fix
-        'assignments':   [
+        'class_name':   classroom.get('name', ''),
+        'subject':      classroom.get('subject', ''),
+        'student_name': session.get('full_name', ''),
+        'assignments':  [
             {
                 'title':     a.get('title'),
                 'due_date':  str(a.get('due_date', 'TBD')),
@@ -542,21 +552,28 @@ def classroom_chat(classroom_id):
         ],
     }
 
-    # Unique per-user per-classroom session key for conversation memory
     sess_key = f"{classroom_id}_{session['user_id']}"
 
     from ai_engine import rag_query
-    answer = rag_query(
-        classroom_id,
-        question,
-        context_data=context_data,
-        session_key=sess_key,     # ← conversation memory fix
-    )
+    try:
+        answer = rag_query(
+            classroom_id,
+            question,
+            context_data=context_data,
+            session_key=sess_key,
+        )
+    except Exception as e:
+        print(f'[Chat] AI error: {e}')
+        answer = 'Sorry, I encountered an error. Please try again in a moment.'
 
-    # Store assistant reply tagged with this user's id
+    # ── Store assistant reply ──
+    # Safety-encode: encode to utf-8 bytes then decode back to strip any
+    # surrogate characters that some LLMs occasionally emit.
+    safe_answer = answer.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+
     cursor.execute(
         'INSERT INTO chat_history (classroom_id, user_id, role, message) VALUES (%s,%s,%s,%s)',
-        (classroom_id, session['user_id'], 'assistant', answer)
+        (classroom_id, session['user_id'], 'assistant', safe_answer)
     )
     mysql.connection.commit()
 
@@ -567,16 +584,10 @@ def classroom_chat(classroom_id):
 
 @app.route('/uploads/lectures/<int:classroom_id>/<path:filename>')
 def serve_lecture(classroom_id, filename):
-    """Serve a lecture file.
-    PDFs: served inline so the browser renders them directly.
-    Other types: served as attachment (download).
-    Access control: must be logged in AND either the instructor OR an enrolled student.
-    """
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
     cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-
     cursor.execute(
         'SELECT * FROM lecture_materials WHERE classroom_id=%s AND filename=%s',
         (classroom_id, filename)

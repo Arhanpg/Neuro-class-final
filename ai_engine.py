@@ -1,187 +1,147 @@
 """
-NeuroClass AI Engine
-====================
-RAG (Retrieval-Augmented Generation) + Fallback LLM manager.
-Background training via threading so the Flask server stays responsive.
+ai_engine.py  —  NeuroClass AI backend
 
-v2 improvements:
- - Strongly grounded system prompt — AI answers from lecture notes first
- - Conversation memory per session (last N turns)
- - Lecture-file-aware retrieval (can answer "what is in Lecture 9")
- - Multi-query retrieval for better coverage
- - Source citations shown in responses (file name + page)
- - Smarter fallback — clearly labels when using general knowledge
- - Student name memory within a session
+Direct port of the logic from NeuroClass_v4_Final.ipynb:
+  - FallbackLLM  : Gemini-2.0-Flash → OpenRouter/Llama-3.3-70B → Groq/Llama-3.3-70B → Groq/Llama-3.1-8B
+  - RAG          : FAISS + all-MiniLM-L6-v2  (build_rag_index / rag_query)
+  - Assignment grading  : LangGraph pipeline (extract → relevance_check → evaluate → lock)
+  - Project grading     : clone/pull repo → relevance check → rubric eval
+  - Project advisory    : clone/pull repo → advisory report (NOT locked)
+
+This module is imported lazily by app.py so the heavy imports
+(sentence-transformers, FAISS, LangGraph …) only load once.
 """
 
 import os
+import re
 import threading
-import warnings
 from pathlib import Path
-from collections import deque
-from typing import List, Dict, Optional
+from typing import Optional
 
-# Suppress noisy PDF float-parsing warnings from pypdf
-warnings.filterwarnings('ignore', message='.*FloatObject.*')
-warnings.filterwarnings('ignore', message='.*could not convert string to float.*')
+# ─────────────────────────────────────────────────
+#  API KEYS  (read from environment / .env)
+# ─────────────────────────────────────────────────
+from dotenv import load_dotenv
+load_dotenv()
 
-# ── Module-level singletons ────────────────────────────────────────────────
-_llm_manager = None
-_embedding_fn = None
-_vector_stores: dict = {}   # classroom_id -> FAISS store
-_lecture_index: dict = {}   # classroom_id -> {filename: [page_nums]}
+GEMINI_API_KEY     = os.getenv('GEMINI_API_KEY', '')
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
+GROQ_API_KEY       = os.getenv('GROQ_API_KEY', '')
 
-# Conversation memory: session_key -> deque of {"role": "user"|"assistant", "content": str}
-# session_key = f"{classroom_id}_{user_id}"
-_chat_memory: dict = {}
-MEMORY_WINDOW = 8  # keep last 8 turns (4 exchanges) per session
+if GEMINI_API_KEY:
+    os.environ['GEMINI_API_KEY'] = GEMINI_API_KEY
+if OPENROUTER_API_KEY:
+    os.environ['OPENROUTER_API_KEY'] = OPENROUTER_API_KEY
+if GROQ_API_KEY:
+    os.environ['GROQ_API_KEY'] = GROQ_API_KEY
 
-# Training state tracker: classroom_id -> 'idle' | 'running' | 'done' | 'error:<msg>'
-_training_status: dict = {}
-_training_lock = threading.Lock()
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Memory helpers
-# ─────────────────────────────────────────────────────────────────────────
-
-def get_memory(session_key: str) -> deque:
-    if session_key not in _chat_memory:
-        _chat_memory[session_key] = deque(maxlen=MEMORY_WINDOW)
-    return _chat_memory[session_key]
+# ─────────────────────────────────────────────────
+#  PATHS
+# ─────────────────────────────────────────────────
+from config import Config
+LECTURES_BASE_DIR = Config.LECTURES_BASE_DIR
+RAG_INDEX_DIR     = Config.RAG_INDEX_DIR
 
 
-def append_memory(session_key: str, role: str, content: str):
-    mem = get_memory(session_key)
-    mem.append({"role": role, "content": content})
+# ═══════════════════════════════════════════════════════════
+#  FALLBACK LLM MANAGER
+#  Priority: Gemini-2.0-Flash → OpenRouter/Llama-3.3-70B
+#           → Groq/Llama-3.3-70B → Groq/Llama-3.1-8B
+# ═══════════════════════════════════════════════════════════
+
+FALLBACK_TRIGGERS = [
+    'quota', 'rate', 'limit', '429', 'exceeded', 'not found',
+    '404', 'no endpoints', 'unavailable', 'overloaded', '503',
+    'capacity', 'decommissioned', 'deprecated', 'notfound',
+    'invalid api key', 'api key not valid', 'api key invalid',
+    'auth', 'permission', 'unauthorized', '400', '401', '403',
+]
 
 
-def format_memory_for_prompt(session_key: str) -> str:
-    mem = get_memory(session_key)
-    if not mem:
-        return ""
-    lines = []
-    for turn in mem:
-        prefix = "Student" if turn["role"] == "user" else "AI"
-        lines.append(f"{prefix}: {turn['content']}")
-    return "\n".join(lines)
-
-
-def clear_memory(session_key: str):
-    if session_key in _chat_memory:
-        del _chat_memory[session_key]
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Embedding & LLM singletons
-# ─────────────────────────────────────────────────────────────────────────
-
-def _get_embedding_fn():
-    global _embedding_fn
-    if _embedding_fn is None:
-        try:
-            from langchain_huggingface import HuggingFaceEmbeddings
-        except ImportError:
-            from langchain_community.embeddings import HuggingFaceEmbeddings  # type: ignore
-        _embedding_fn = HuggingFaceEmbeddings(
-            model_name='all-MiniLM-L6-v2',
-            model_kwargs={'device': 'cpu'},
-        )
-    return _embedding_fn
-
-
-def _get_llm_manager():
-    global _llm_manager
-    if _llm_manager is None:
-        _llm_manager = FallbackLLM()
-    return _llm_manager
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# FallbackLLM: Gemini → OpenRouter → Groq-70B → Groq-8B
-# ─────────────────────────────────────────────────────────────────────────
 class FallbackLLM:
-    FALLBACK_TRIGGERS = (
-        'quota', 'rate', 'limit', '429', 'exceeded', 'not found',
-        '404', 'no endpoints', 'unavailable', 'overloaded', '503',
-        'capacity', 'decommissioned', 'deprecated', 'notfound',
-        'invalid api key', 'api key not valid', 'auth', 'permission',
-        'unauthorized', '400', '401', '403', 'modelnotfound',
-    )
+    """Auto-switches to the next provider on quota / rate-limit errors."""
 
     def __init__(self):
-        self.models = []
-        self.active_idx = 0
+        self.models: list = []
+        self.active_idx: int = 0
         self._init_models()
 
     def _init_models(self):
-        from config import Config
-
         # 1. Gemini 2.0 Flash
-        if Config.GEMINI_API_KEY:
+        if GEMINI_API_KEY:
             try:
                 from langchain_google_genai import ChatGoogleGenerativeAI
-                self.models.append(('Gemini-2.0-Flash', ChatGoogleGenerativeAI(
-                    model='gemini-2.0-flash',
-                    google_api_key=Config.GEMINI_API_KEY,
-                    temperature=0.4,
-                )))
+                self.models.append((
+                    'Gemini-2.0-Flash',
+                    ChatGoogleGenerativeAI(
+                        model='gemini-2.0-flash',
+                        google_api_key=GEMINI_API_KEY,
+                        temperature=0.2,
+                    )
+                ))
+                print('[AI] Gemini-2.0-Flash loaded')
             except Exception as e:
                 print(f'[AI] Gemini init failed: {e}')
 
-        # 2. OpenRouter Llama-3.3-70B (free)
-        if Config.OPENROUTER_API_KEY:
+        # 2. OpenRouter Llama-3.3-70B
+        if OPENROUTER_API_KEY:
             try:
                 from langchain_openai import ChatOpenAI
-                self.models.append(('OpenRouter/Llama-3.3-70B', ChatOpenAI(
-                    model='meta-llama/llama-3.3-70b-instruct:free',
-                    openai_api_base='https://openrouter.ai/api/v1',
-                    openai_api_key=Config.OPENROUTER_API_KEY,
-                    temperature=0.4,
-                    default_headers={
-                        'HTTP-Referer': 'https://neuroclass.app',
-                        'X-Title': 'NeuroClass',
-                    },
-                )))
+                self.models.append((
+                    'OpenRouter/Llama-3.3-70B',
+                    ChatOpenAI(
+                        model='meta-llama/llama-3.3-70b-instruct:free',
+                        openai_api_base='https://openrouter.ai/api/v1',
+                        openai_api_key=OPENROUTER_API_KEY,
+                        temperature=0.2,
+                        default_headers={
+                            'HTTP-Referer': 'https://neuroclass.app',
+                            'X-Title': 'NeuroClass',
+                        },
+                    )
+                ))
+                print('[AI] OpenRouter/Llama-3.3-70B loaded')
             except Exception as e:
                 print(f'[AI] OpenRouter init failed: {e}')
 
         # 3. Groq Llama-3.3-70B
-        if Config.GROQ_API_KEY:
+        if GROQ_API_KEY:
             try:
                 from langchain_groq import ChatGroq
-                self.models.append(('Groq/Llama-3.3-70B', ChatGroq(
-                    model='llama-3.3-70b-versatile',
-                    api_key=Config.GROQ_API_KEY,
-                    temperature=0.4,
-                )))
+                self.models.append((
+                    'Groq/Llama-3.3-70B',
+                    ChatGroq(
+                        model='llama-3.3-70b-versatile',
+                        api_key=GROQ_API_KEY,
+                        temperature=0.2,
+                    )
+                ))
+                print('[AI] Groq/Llama-3.3-70B loaded')
             except Exception as e:
                 print(f'[AI] Groq-70B init failed: {e}')
 
-            # 4. Groq Llama-3.1-8B Instant (fast fallback)
+            # 4. Groq Llama-3.1-8B (fast fallback)
             try:
                 from langchain_groq import ChatGroq
-                self.models.append(('Groq/Llama-3.1-8B', ChatGroq(
-                    model='llama-3.1-8b-instant',
-                    api_key=Config.GROQ_API_KEY,
-                    temperature=0.4,
-                )))
+                self.models.append((
+                    'Groq/Llama-3.1-8B',
+                    ChatGroq(
+                        model='llama-3.1-8b-instant',
+                        api_key=GROQ_API_KEY,
+                        temperature=0.2,
+                    )
+                ))
+                print('[AI] Groq/Llama-3.1-8B loaded')
             except Exception as e:
                 print(f'[AI] Groq-8B init failed: {e}')
 
         if not self.models:
-            print('[AI] WARNING: No LLM provider initialised. Check your .env API keys.')
+            print('[AI] WARNING: No LLM provider loaded. Check your API keys in .env')
 
-    def invoke(self, prompt: str) -> str:
-        """Try each provider in order; fall back on quota/rate errors."""
-        if not self.models:
-            return (
-                '⚠️ No AI provider is configured. '
-                'Please add your API keys to the .env file.'
-            )
-
+    def invoke(self, messages):
         from langchain_core.messages import HumanMessage
-        messages = [HumanMessage(content=prompt)]
+        if not self.models:
+            return type('R', (), {'content': 'No AI provider available. Please configure API keys.'})()  # noqa
 
         for idx in range(self.active_idx, len(self.models)):
             name, model = self.models[idx]
@@ -190,469 +150,545 @@ class FallbackLLM:
                 if idx != self.active_idx:
                     print(f'[AI] Switched to {name}')
                     self.active_idx = idx
-                return result.content if hasattr(result, 'content') else str(result)
+                return result
             except Exception as e:
                 err = str(e).lower()
-                if any(t in err for t in self.FALLBACK_TRIGGERS):
-                    print(f'[AI] {name} unavailable ({str(e)[:60]}), trying next...')
+                if any(t in err for t in FALLBACK_TRIGGERS):
+                    print(f'[AI] {name} unavailable ({str(e)[:80]}), trying next...')
                     continue
                 raise
-
-        return '⚠️ All AI providers are currently unavailable. Please try again later.'
+        raise RuntimeError('All LLM providers failed.')
 
     @property
     def current_name(self):
-        return self.models[self.active_idx][0] if self.models else 'None'
+        if self.models:
+            return self.models[self.active_idx][0]
+        return 'None'
 
 
-# ─────────────────────────────────────────────────────────────────────────
-# RAG path helpers
-# ─────────────────────────────────────────────────────────────────────────
+_llm_manager: Optional[FallbackLLM] = None
+_llm_lock = threading.Lock()
 
-def _lecture_path(classroom_id: int) -> Path:
-    from config import Config
-    return Path(Config.LECTURES_BASE_DIR) / str(classroom_id)
+
+def get_llm() -> FallbackLLM:
+    global _llm_manager
+    with _llm_lock:
+        if _llm_manager is None:
+            _llm_manager = FallbackLLM()
+    return _llm_manager
+
+
+# ═══════════════════════════════════════════════════════════
+#  RAG — FAISS + sentence-transformers
+# ═══════════════════════════════════════════════════════════
+
+_vector_stores: dict = {}   # classroom_id (int) → FAISS store
+_embedding_fn  = None
+_training_status: dict = {}  # classroom_id → 'idle' | 'running' | 'done' | 'error'
+
+
+def _get_embedding_fn():
+    global _embedding_fn
+    if _embedding_fn is None:
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        _embedding_fn = HuggingFaceEmbeddings(
+            model_name='all-MiniLM-L6-v2',
+            model_kwargs={'device': 'cpu'},
+        )
+    return _embedding_fn
+
+
+def _safe_name(classroom_id: int) -> str:
+    return str(classroom_id)
 
 
 def _index_path(classroom_id: int) -> Path:
-    from config import Config
-    return Path(Config.RAG_INDEX_DIR) / str(classroom_id)
+    return Path(RAG_INDEX_DIR) / _safe_name(classroom_id)
 
 
 def is_indexed(classroom_id: int) -> bool:
-    ip = _index_path(classroom_id)
-    return (ip / 'index.faiss').exists()
+    return classroom_id in _vector_stores or _index_path(classroom_id).exists()
 
 
 def get_training_status(classroom_id: int) -> str:
+    if classroom_id in _vector_stores:
+        return 'done'
+    if _index_path(classroom_id).exists():
+        return 'done'
     return _training_status.get(classroom_id, 'idle')
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Build lecture file index (filename → pages map) for "what's in Lecture 9"
-# ─────────────────────────────────────────────────────────────────────────
-
-def _build_lecture_index(classroom_id: int, docs: list):
-    """
-    Build a map of {normalized_filename: list_of_page_numbers}
-    from the loaded documents so the AI can answer file-specific questions.
-    """
-    index = {}
-    for doc in docs:
-        src = doc.metadata.get('source', '')
-        page = doc.metadata.get('page', None)
-        fname = Path(src).stem.lower().replace('_', ' ').replace('-', ' ')  # e.g. "lecture 9"
-        if fname not in index:
-            index[fname] = []
-        if page is not None and page not in index[fname]:
-            index[fname].append(page)
-    _lecture_index[classroom_id] = index
-    return index
-
-
-def _get_lecture_list(classroom_id: int) -> str:
-    """Returns a human-readable list of indexed lecture files."""
-    index = _lecture_index.get(classroom_id, {})
-    if not index:
-        return 'No lecture files are indexed yet.'
-    lines = []
-    for fname, pages in sorted(index.items()):
-        page_info = f"({len(pages)} pages)" if pages else ""
-        lines.append(f"• {fname.title()} {page_info}")
-    return '\n'.join(lines)
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Multi-query retrieval for better coverage
-# ─────────────────────────────────────────────────────────────────────────
-
-def _multi_query_retrieve(store, question: str, k: int = 6) -> List:
-    """
-    Generate 2 query variants and combine unique results.
-    This catches cases where the exact phrasing misses relevant chunks.
-    """
-    queries = [question]
-
-    # Simple keyword expansion — extract core noun phrases
-    q_lower = question.lower()
-    if 'lecture' in q_lower and any(c.isdigit() for c in question):
-        # e.g. "what is in lecture 9" → also search "lecture 9 topics"
-        queries.append(question + " topics content")
-    elif '?' in question:
-        queries.append(question.replace('?', '').strip())
-    else:
-        queries.append(question + " explain")
-
-    seen_ids = set()
-    all_docs = []
-    retriever = store.as_retriever(search_kwargs={'k': k})
-    for q in queries:
-        try:
-            results = retriever.invoke(q)
-            for doc in results:
-                doc_id = doc.page_content[:80]
-                if doc_id not in seen_ids:
-                    seen_ids.add(doc_id)
-                    all_docs.append(doc)
-        except Exception as e:
-            print(f'[AI] Retrieval query failed: {e}')
-
-    return all_docs[:k + 2]  # cap at k+2 to avoid context overflow
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Format retrieved docs with source citations
-# ─────────────────────────────────────────────────────────────────────────
-
-def _format_context_with_sources(docs: list) -> tuple:
-    """
-    Returns (context_text, sources_summary)
-    context_text: the raw text for the prompt
-    sources_summary: e.g. "Lecture-9.pdf (p.3), Lecture-9.pdf (p.5)"
-    """
-    context_parts = []
-    sources = []
-
-    for doc in docs:
-        src = doc.metadata.get('source', 'unknown')
-        page = doc.metadata.get('page', None)
-        fname = Path(src).name if src != 'unknown' else 'course material'
-        page_str = f" p.{page + 1}" if page is not None else ""
-        label = f"{fname}{page_str}"
-
-        context_parts.append(f"[Source: {label}]\n{doc.page_content}")
-        if label not in sources:
-            sources.append(label)
-
-    return '\n\n'.join(context_parts), ', '.join(sources) if sources else 'course material'
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Main RAG query function
-# ─────────────────────────────────────────────────────────────────────────
-
-def rag_query(
-    classroom_id: int,
-    question: str,
-    context_data: dict = None,
-    session_key: str = None,
-) -> str:
-    """
-    Main entry point for chatbot queries.
-
-    Parameters
-    ----------
-    classroom_id : int
-    question     : str   — the student's question
-    context_data : dict  — optional: assignments, class_name, student_name, subject
-    session_key  : str   — e.g. "42_7" (classroom_id_user_id) for per-user memory
-    """
-    llm = _get_llm_manager()
-    session_key = session_key or str(classroom_id)
-
-    # ── Build classroom context block ──
-    class_name = ''
-    subject = ''
-    student_name = ''
-    assignments_block = ''
-
-    if context_data:
-        class_name = context_data.get('class_name', '')
-        subject = context_data.get('subject', '')
-        student_name = context_data.get('student_name', '')
-        assignments = context_data.get('assignments', [])
-        if assignments:
-            lines = []
-            for a in assignments:
-                lines.append(
-                    f"  - {a.get('title', '?')} "
-                    f"(due: {a.get('due_date', 'TBD')}, "
-                    f"max marks: {a.get('max_marks', '?')})"
-                )
-            assignments_block = 'ASSIGNMENTS:\n' + '\n'.join(lines)
-
-    class_block = ''
-    if class_name or subject:
-        class_block = f"Class: {class_name}" + (f" | Subject: {subject}" if subject else "")
-
-    student_block = ''
-    if student_name:
-        student_block = f"The student you are talking to is: {student_name}"
-
-    # ── Retrieve conversation history ──
-    memory_block = format_memory_for_prompt(session_key)
-
-    # ── Try RAG retrieval ──
-    has_index = _load_index(classroom_id)
-
-    if has_index:
-        try:
-            docs = _multi_query_retrieve(_vector_stores[classroom_id], question, k=7)
-            context, sources = _format_context_with_sources(docs)
-
-            # Check if question is about lecture files specifically
-            lecture_list_hint = ''
-            q_lower = question.lower()
-            if 'what' in q_lower and ('lecture' in q_lower or 'topic' in q_lower or 'cover' in q_lower or 'content' in q_lower):
-                lecture_list_hint = f"\nINDEXED LECTURE FILES:\n{_get_lecture_list(classroom_id)}"
-
-            prompt = f"""You are NeuroClass AI, a smart and friendly teaching assistant.
-
-YOUR RULES:
-1. ALWAYS answer from the LECTURE NOTES provided below first. They are your primary source of truth.
-2. If the answer is clearly and fully present in the lecture notes, answer it directly and confidently — do NOT say "I couldn't find" or "the material doesn't mention" when the content IS there.
-3. If the lecture notes cover the topic partially, use them as the base and supplement with your knowledge — clearly say "Based on the lecture notes, ... Additionally from general AI knowledge, ..."
-4. If the topic is completely absent from the lecture notes (e.g. personal questions, scheduling), use general knowledge and say "This isn't in the lecture notes, but here's what I know: ..."
-5. NEVER say the lecture notes are empty or only contain repeated keywords — extract the actual content.
-6. Remember previous conversation context when answering follow-up questions.
-7. If the student tells you their name, remember it and use it naturally.
-8. When quoting from lecture notes, mention the source (e.g. "As covered in Lecture 9...").
-9. Be concise, structured, and student-friendly. Use bullet points and bold text where helpful.
-10. For algorithm questions, always include: definition, key idea, step-by-step approach, and comparison with related algorithms if relevant.
-
-{f'CLASSROOM: {class_block}' if class_block else ''}
-{student_block}
-{lecture_list_hint}
-
-LECTURE NOTES (your primary knowledge source):
-{context}
-
-{assignments_block}
-
-CONVERSATION HISTORY (for context):
-{memory_block if memory_block else 'No previous messages in this session.'}
-
-STUDENT'S QUESTION: {question}
-
-ANSWER (be thorough, cite the lecture source, use the notes above):"""
-
-            answer = llm.invoke(prompt)
-
-            # Append source footer if sources are real files
-            if sources and sources != 'course material' and 'pdf' in sources.lower():
-                answer = answer.rstrip() + f"\n\n📄 *Sources: {sources}*"
-
-            # Save to memory
-            append_memory(session_key, 'user', question)
-            append_memory(session_key, 'assistant', answer[:400])  # truncate for memory
-
-            return answer
-
-        except Exception as e:
-            print(f'[AI] RAG retrieval error: {e}')
-            # Fall through to no-index path
-
-    # ── No index / fallback path ──
-    prompt = f"""You are NeuroClass AI, a smart and friendly teaching assistant.
-The lecture notes for this classroom have not been uploaded or indexed yet.
-Answer from your general knowledge, but be honest that lecture notes aren't available.
-If the student asks something personal (like their name), check the conversation history below.
-Be helpful, structured, and concise.
-
-{f'CLASSROOM: {class_block}' if class_block else ''}
-{student_block}
-{assignments_block}
-
-CONVERSATION HISTORY:
-{memory_block if memory_block else 'No previous messages.'}
-
-STUDENT'S QUESTION: {question}
-
-ANSWER:"""
-
-    answer = llm.invoke(prompt)
-
-    append_memory(session_key, 'user', question)
-    append_memory(session_key, 'assistant', answer[:400])
-
-    return answer
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Index build (background thread)
-# ─────────────────────────────────────────────────────────────────────────
-
-def _run_build_index(classroom_id: int):
-    with _training_lock:
-        _training_status[classroom_id] = 'running'
-
-    print(f'[AI] Background training started for classroom {classroom_id}...')
-    try:
-        result = _build_index_sync(classroom_id)
-        if result.get('ok'):
-            _training_status[classroom_id] = 'done'
-            print(f'[AI] Training complete for classroom {classroom_id}: {result["message"]}')
-        else:
-            _training_status[classroom_id] = f'error:{result.get("error", "unknown")}'
-            print(f'[AI] Training failed for classroom {classroom_id}: {result.get("error")}')
-    except Exception as e:
-        _training_status[classroom_id] = f'error:{str(e)}'
-        print(f'[AI] Training exception for classroom {classroom_id}: {e}')
-
-    try:
-        from app import mysql
-        if 'done' in _training_status.get(classroom_id, ''):
-            conn = mysql.connection
-            cur = conn.cursor()
-            cur.execute('UPDATE classrooms SET rag_indexed=1 WHERE id=%s', (classroom_id,))
-            conn.commit()
-            print(f'[AI] DB updated rag_indexed=1 for classroom {classroom_id}')
-    except Exception as db_err:
-        print(f'[AI] DB update skipped: {db_err}')
-
-
-def _build_index_sync(classroom_id: int) -> dict:
-    """Synchronous index build — call from background thread only."""
-    lecture_dir = _lecture_path(classroom_id)
-    if not lecture_dir.exists():
-        return {'ok': False, 'error': 'No lecture folder found. Upload PDFs first.'}
-
-    pdf_files = list(lecture_dir.glob('*.pdf'))
-    txt_files = list(lecture_dir.glob('*.txt'))
-    doc_files = list(lecture_dir.glob('*.docx')) + list(lecture_dir.glob('*.doc'))
-    all_files = pdf_files + txt_files + doc_files
-
-    if not all_files:
-        return {'ok': False, 'error': 'No files found. Upload lecture PDFs/DOCs/TXTs first.'}
-
-    try:
-        from langchain_community.document_loaders import (
-            PyPDFDirectoryLoader, TextLoader, Docx2txtLoader
-        )
-        from langchain.text_splitter import RecursiveCharacterTextSplitter
-        from langchain_community.vectorstores import FAISS
-
-        docs = []
-
-        # Load PDFs — preserve source metadata (filename + page number)
-        if pdf_files:
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore')
-                loader = PyPDFDirectoryLoader(
-                    str(lecture_dir), glob='**/*.pdf', silent_errors=True
-                )
-                pdf_docs = loader.load()
-                # Ensure source metadata is set
-                for d in pdf_docs:
-                    if 'source' not in d.metadata:
-                        d.metadata['source'] = str(lecture_dir / 'unknown.pdf')
-                docs.extend(pdf_docs)
-
-        # Load TXT files
-        for f in txt_files:
-            try:
-                loaded = TextLoader(str(f), encoding='utf-8').load()
-                for d in loaded:
-                    d.metadata['source'] = str(f)
-                docs.extend(loaded)
-            except Exception:
-                try:
-                    loaded = TextLoader(str(f), encoding='latin-1').load()
-                    for d in loaded:
-                        d.metadata['source'] = str(f)
-                    docs.extend(loaded)
-                except Exception as e:
-                    print(f'[AI] Skipping {f.name}: {e}')
-
-        # Load DOCX files
-        for f in doc_files:
-            try:
-                loaded = Docx2txtLoader(str(f)).load()
-                for d in loaded:
-                    d.metadata['source'] = str(f)
-                docs.extend(loaded)
-            except Exception as e:
-                print(f'[AI] Skipping {f.name}: {e}')
-
-        if not docs:
-            return {'ok': False, 'error': 'Files found but no text could be extracted (scanned images?)'}
-
-        # Build lecture file index BEFORE chunking (chunks lose page-level metadata)
-        _build_lecture_index(classroom_id, docs)
-
-        # Split with smaller chunks + more overlap for better retrieval
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=600,
-            chunk_overlap=150,
-            separators=['\n\n', '\n', '. ', ' ', ''],
-        )
-        chunks = splitter.split_documents(docs)
-
-        # Preserve source metadata on chunks
-        for chunk in chunks:
-            if 'source' not in chunk.metadata:
-                chunk.metadata['source'] = 'unknown'
-
-        emb = _get_embedding_fn()
-        store = FAISS.from_documents(chunks, emb)
-
-        idx_path = _index_path(classroom_id)
-        idx_path.mkdir(parents=True, exist_ok=True)
-        store.save_local(str(idx_path))
-
-        _vector_stores[classroom_id] = store
-
-        return {
-            'ok': True,
-            'message': (
-                f'Trained on {len(docs)} pages '
-                f'({len(chunks)} chunks) from {len(all_files)} file(s). '
-                f'Indexed lectures: {", ".join(sorted(_lecture_index[classroom_id].keys()))}'
-            )
-        }
-    except Exception as e:
-        return {'ok': False, 'error': str(e)}
 
 
 def build_rag_index(classroom_id: int) -> dict:
     """
-    PUBLIC API — called from Flask route.
-    Starts background training and returns immediately.
+    Build the FAISS index for a classroom from its uploaded lecture files.
+    Runs in a background thread so the HTTP response returns immediately.
     """
-    status = get_training_status(classroom_id)
-    if status == 'running':
-        return {'ok': False, 'error': 'Training is already in progress. Please wait.'}
+    lecture_dir = Path(LECTURES_BASE_DIR) / str(classroom_id)
+    if not lecture_dir.exists():
+        return {'ok': False, 'error': 'No lecture files found. Upload PDFs first.'}
 
-    lecture_dir = _lecture_path(classroom_id)
-    if not lecture_dir.exists() or not any(lecture_dir.iterdir()):
+    pdf_files = list(lecture_dir.glob('*.pdf')) + \
+                list(lecture_dir.glob('*.txt')) + \
+                list(lecture_dir.glob('*.doc')) + \
+                list(lecture_dir.glob('*.docx'))
+
+    if not pdf_files:
         return {'ok': False, 'error': 'No lecture files found. Upload PDFs first.'}
 
     _training_status[classroom_id] = 'running'
-    t = threading.Thread(
-        target=_run_build_index,
-        args=(classroom_id,),
-        daemon=True,
-        name=f'rag-train-{classroom_id}',
-    )
+
+    def _build():
+        try:
+            from langchain_community.document_loaders import PyPDFDirectoryLoader
+            from langchain.text_splitter import RecursiveCharacterTextSplitter
+            from langchain_community.vectorstores import FAISS
+
+            emb = _get_embedding_fn()
+
+            loader = PyPDFDirectoryLoader(str(lecture_dir), glob='**/*.pdf', silent_errors=True)
+            docs   = loader.load()
+
+            # Also load .txt files
+            for txt_file in lecture_dir.glob('*.txt'):
+                try:
+                    text = txt_file.read_text(encoding='utf-8', errors='replace')
+                    from langchain.schema import Document
+                    docs.append(Document(page_content=text, metadata={'source': str(txt_file)}))
+                except Exception:
+                    pass
+
+            if not docs:
+                _training_status[classroom_id] = 'error'
+                print(f'[RAG] No text extracted from files in {lecture_dir}')
+                return
+
+            chunks = RecursiveCharacterTextSplitter(
+                chunk_size=800, chunk_overlap=120
+            ).split_documents(docs)
+
+            store = FAISS.from_documents(chunks, emb)
+            _vector_stores[classroom_id] = store
+
+            idx_path = _index_path(classroom_id)
+            idx_path.mkdir(parents=True, exist_ok=True)
+            store.save_local(str(idx_path))
+
+            _training_status[classroom_id] = 'done'
+            print(f'[RAG] Index built for classroom {classroom_id}: '
+                  f'{len(docs)} pages, {len(chunks)} chunks → {idx_path}')
+        except Exception as e:
+            _training_status[classroom_id] = 'error'
+            print(f'[RAG] Build failed for classroom {classroom_id}: {e}')
+
+    t = threading.Thread(target=_build, daemon=True)
     t.start()
-
-    return {
-        'ok': True,
-        'background': True,
-        'message': (
-            '🚀 Training started in the background! '
-            'You can navigate away — it will keep running. '
-            'Check status with the "Check Status" button.'
-        )
-    }
+    return {'ok': True, 'message': 'Training started in background. Refresh in ~30 seconds.'}
 
 
-def _load_index(classroom_id: int) -> bool:
-    if classroom_id in _vector_stores:
-        return True
-    ip = _index_path(classroom_id)
-    if not ip.exists():
+def _load_rag_index(classroom_id: int) -> bool:
+    """Load a saved FAISS index from disk."""
+    idx_path = _index_path(classroom_id)
+    if not idx_path.exists():
         return False
     try:
         from langchain_community.vectorstores import FAISS
         emb = _get_embedding_fn()
         _vector_stores[classroom_id] = FAISS.load_local(
-            str(ip), emb, allow_dangerous_deserialization=True
+            str(idx_path), emb, allow_dangerous_deserialization=True
         )
-        # Rebuild lecture index from loaded store if not already in memory
-        if classroom_id not in _lecture_index:
-            # We can't rebuild from FAISS directly, so just mark as loaded
-            _lecture_index[classroom_id] = {}
+        print(f'[RAG] Loaded index for classroom {classroom_id}')
         return True
-    except Exception:
+    except Exception as e:
+        print(f'[RAG] Load failed for classroom {classroom_id}: {e}')
         return False
+
+
+# Per-user conversation memory  {session_key: [HumanMessage / AIMessage]}
+_conversation_memory: dict = {}
+
+
+def rag_query(
+    classroom_id: int,
+    question: str,
+    k: int = 5,
+    context_data: Optional[dict] = None,
+    session_key: Optional[str] = None,
+) -> str:
+    """
+    Answer a student's question using the classroom's FAISS index + conversation memory.
+    Falls back to a general-knowledge answer when no index is available.
+    """
+    from langchain_core.messages import HumanMessage, AIMessage
+    llm = get_llm()
+
+    # ── Build assignment context string ──
+    assign_ctx = ''
+    if context_data and context_data.get('assignments'):
+        lines = ['Upcoming assignments:']
+        for a in context_data['assignments']:
+            lines.append(f"  - {a['title']} | Due: {a['due_date']} | Max marks: {a['max_marks']}")
+        assign_ctx = '\n'.join(lines)
+
+    class_name    = (context_data or {}).get('class_name', '')
+    subject       = (context_data or {}).get('subject', '')
+    student_name  = (context_data or {}).get('student_name', '')
+
+    # ── Retrieve from vector store if indexed ──
+    if classroom_id not in _vector_stores:
+        _load_rag_index(classroom_id)
+
+    context_chunks = ''
+    if classroom_id in _vector_stores:
+        try:
+            retriever = _vector_stores[classroom_id].as_retriever(search_kwargs={'k': k})
+            docs      = retriever.invoke(question)
+            context_chunks = '\n\n'.join(d.page_content for d in docs)
+        except Exception as e:
+            print(f'[RAG] Retrieval error: {e}')
+
+    # ── Conversation memory ──
+    history_msgs = []
+    if session_key:
+        history_msgs = _conversation_memory.get(session_key, [])[-10:]  # last 5 turns
+
+    # ── Build prompt ──
+    if context_chunks:
+        system_prompt = (
+            f"You are a helpful AI assistant for the {class_name} ({subject}) classroom on NeuroClass.\n"
+            f"Student's name: {student_name}\n\n"
+            f"{assign_ctx}\n\n"
+            "Answer using ONLY the course material below. If the answer isn't in the material, "
+            "say so honestly and then use your general knowledge to help.\n\n"
+            f"COURSE MATERIAL:\n{context_chunks}"
+        )
+    else:
+        system_prompt = (
+            f"You are a helpful AI assistant for the {class_name} ({subject}) classroom on NeuroClass.\n"
+            f"Student's name: {student_name}\n\n"
+            f"{assign_ctx}\n\n"
+            "No lecture notes have been indexed yet for this classroom. "
+            "Answer based on your general knowledge and be as helpful as possible."
+        )
+
+    messages = (
+        [HumanMessage(content=system_prompt)]
+        + history_msgs
+        + [HumanMessage(content=question)]
+    )
+
+    answer_obj = llm.invoke(messages)
+    answer     = answer_obj.content if hasattr(answer_obj, 'content') else str(answer_obj)
+
+    # ── Update conversation memory ──
+    if session_key:
+        mem = _conversation_memory.get(session_key, [])
+        mem.append(HumanMessage(content=question))
+        mem.append(AIMessage(content=answer))
+        _conversation_memory[session_key] = mem[-20:]  # keep last 10 turns
+
+    return answer
+
+
+# ═══════════════════════════════════════════════════════════
+#  ASSIGNMENT GRADER  (LangGraph pipeline from the notebook)
+# ═══════════════════════════════════════════════════════════
+
+def _build_assignment_graph():
+    from typing import TypedDict
+    from langgraph.graph import StateGraph, END
+    from langchain_community.document_loaders import PyPDFLoader
+    from langchain_core.messages import HumanMessage
+
+    class EvalState(TypedDict):
+        submission_path: str
+        rubric: str
+        course_id: str
+        student_id: str
+        extracted_text: str
+        relevance_flags: str
+        evaluation: str
+        score: float
+        feedback: str
+        locked: bool
+
+    def node_extract(state: EvalState) -> EvalState:
+        p = Path(state['submission_path'])
+        if p.exists():
+            pages = PyPDFLoader(str(p)).load()
+            state['extracted_text'] = ' '.join(pg.page_content for pg in pages)
+            print(f'[Grader] Extracted {len(pages)} pages')
+        else:
+            state['extracted_text'] = 'ERROR: File not found'
+        return state
+
+    def node_relevance_check(state: EvalState) -> EvalState:
+        if 'ERROR' in state['extracted_text']:
+            state['relevance_flags'] = 'ON_TOPIC: NO | HAS_DOCUMENTATION: NO'
+            return state
+        llm = get_llm()
+        prompt = (
+            f"You are checking academic submission relevance for NeuroClass.\n\n"
+            f"ASSIGNMENT RUBRIC / EXPECTED TOPIC:\n{state['rubric']}\n\n"
+            f"SUBMISSION CONTENT (first 2000 chars):\n{state['extracted_text'][:2000]}\n\n"
+            "Answer ONLY these two questions, strictly YES or NO.\n"
+            "- ON_TOPIC: Does the submission directly address the assignment rubric?\n"
+            "- HAS_DOCUMENTATION: Does it contain comments, docstrings, or a README?\n\n"
+            "Respond in EXACTLY this format:\n"
+            "ON_TOPIC: YES/NO — one sentence reason\n"
+            "HAS_DOCUMENTATION: YES/NO — one sentence reason"
+        )
+        resp = llm.invoke([HumanMessage(content=prompt)])
+        state['relevance_flags'] = resp.content.strip()
+        return state
+
+    def node_evaluate(state: EvalState) -> EvalState:
+        if 'ERROR' in state['extracted_text']:
+            state.update(evaluation='ERROR', score=0.0, feedback='Could not read file. Score: 0.', locked=True)
+            return state
+        llm = get_llm()
+        flags = state.get('relevance_flags', '')
+        off_topic_warn = (
+            'RELEVANCE WARNING: Submission flagged as OFF-TOPIC. '
+            'Max score is 30.\n' if 'ON_TOPIC: NO' in flags.upper() else ''
+        )
+        no_docs_warn = (
+            'DOCUMENTATION WARNING: No documentation detected. '
+            'Documentation criteria score = 0.\n' if 'HAS_DOCUMENTATION: NO' in flags.upper() else ''
+        )
+        prompt = (
+            f"{off_topic_warn}{no_docs_warn}"
+            f"ASSIGNMENT RUBRIC:\n{state['rubric']}\n\n"
+            f"STUDENT SUBMISSION:\n{state['extracted_text']}\n\n"
+            f"PRE-EVALUATION FLAGS:\n{flags}\n\n"
+            "Respond in EXACTLY this format:\n"
+            "CRITERION_BREAKDOWN:\n"
+            "- criterion: score/max — reason\n"
+            "SCORE: 0-100\n"
+            "GRADE: A/B/C/D/F\n"
+            "STRENGTHS: ...\n"
+            "WEAKNESSES: ...\n"
+            "IMPROVEMENT_SUGGESTIONS:\n- ...\n"
+            "DETAILED_FEEDBACK: ..."
+        )
+        raw = llm.invoke([HumanMessage(content=prompt)]).content
+        score = 0.0
+        for line in raw.split('\n'):
+            if line.strip().upper().startswith('SCORE:'):
+                try:
+                    score = float(line.split(':', 1)[1].strip().split()[0])
+                except (ValueError, IndexError):
+                    pass
+                break
+        if 'ON_TOPIC: NO' in flags.upper() and score > 30:
+            score = min(score, 30.0)
+        state.update(evaluation=raw, score=score, feedback=raw, locked=True)
+        return state
+
+    def node_lock(state: EvalState) -> EvalState:
+        state['locked'] = True
+        grade = 'A' if state['score'] >= 90 else 'B' if state['score'] >= 80 else \
+                'C' if state['score'] >= 70 else 'D' if state['score'] >= 60 else 'F'
+        print(f"[Grader] LOCKED student={state['student_id']} score={state['score']} grade={grade}")
+        return state
+
+    g = StateGraph(EvalState)
+    g.add_node('extract',         node_extract)
+    g.add_node('relevance_check', node_relevance_check)
+    g.add_node('evaluate',        node_evaluate)
+    g.add_node('lock',            node_lock)
+    g.set_entry_point('extract')
+    g.add_edge('extract',         'relevance_check')
+    g.add_edge('relevance_check', 'evaluate')
+    g.add_edge('evaluate',        'lock')
+    g.add_edge('lock',            END)
+    return g.compile()
+
+
+_assignment_chain = None
+_assignment_chain_lock = threading.Lock()
+
+
+def get_assignment_chain():
+    global _assignment_chain
+    with _assignment_chain_lock:
+        if _assignment_chain is None:
+            _assignment_chain = _build_assignment_graph()
+    return _assignment_chain
+
+
+def evaluate_assignment(submission_pdf: str, rubric: str, course_id: str, student_id: str) -> dict:
+    """
+    Grade a student's PDF submission against a rubric.
+    Returns dict with keys: score (float), feedback (str), locked (bool).
+    """
+    chain = get_assignment_chain()
+    result = chain.invoke({
+        'submission_path': submission_pdf,
+        'rubric':          rubric,
+        'course_id':       course_id,
+        'student_id':      student_id,
+        'extracted_text':  '',
+        'relevance_flags': '',
+        'evaluation':      '',
+        'score':           0.0,
+        'feedback':        '',
+        'locked':          False,
+    })
+    return result
+
+
+# ═══════════════════════════════════════════════════════════
+#  PROJECT GRADER  (from notebook cells 5 / 5b)
+# ═══════════════════════════════════════════════════════════
+
+def _clone_or_pull(repo_url: str, local_path: str) -> bool:
+    import subprocess
+    p = Path(local_path)
+    cmd = ['git', '-C', local_path, 'pull'] if p.exists() else ['git', 'clone', repo_url, local_path]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    return result.returncode == 0
+
+
+def _get_repo_summary(local_path: str) -> str:
+    import subprocess
+    parts = []
+    r = subprocess.run(
+        ['find', local_path, '-type', 'f',
+         '-not', '-path', '*/.git/*',
+         '-not', '-path', '*/node_modules/*',
+         '-not', '-path', '*/__pycache__/*'],
+        capture_output=True, text=True
+    )
+    files = [f.replace(local_path, '').lstrip('/') for f in r.stdout.strip().split('\n') if f][:60]
+    parts.append('FILE STRUCTURE (sample):\n' + '\n'.join(files))
+    r = subprocess.run(
+        ['git', '-C', local_path, 'log', '--oneline', '--format=%h %ad %s', '--date=short', '-20'],
+        capture_output=True, text=True
+    )
+    parts.append('COMMITS:\n' + r.stdout)
+    for name in ['README.md', 'readme.md', 'README.txt']:
+        readme = Path(local_path) / name
+        if readme.exists():
+            parts.append('README:\n' + readme.read_text(errors='ignore')[:2000])
+            break
+    return '\n\n'.join(parts)
+
+
+def _check_repo_relevance(summary: str, project_details: str, project_rubric: str) -> dict:
+    from langchain_core.messages import HumanMessage
+    llm = get_llm()
+    detail_block = project_details or project_rubric
+    prompt = (
+        f"You are a strict academic integrity checker for NeuroClass.\n\n"
+        f"PROJECT REQUIREMENTS:\n{detail_block}\n\n"
+        f"STUDENT REPO ANALYSIS:\n{summary}\n\n"
+        "Answer these two questions with strict YES or NO:\n"
+        "Q1_HAS_CODE: Does the repository contain actual code files? YES or NO\n"
+        "Q2_IS_RELEVANT: Is the code DIRECTLY related to the project requirements? YES or NO\n"
+        "REASON: One sentence explaining your decision."
+    )
+    response = llm.invoke([HumanMessage(content=prompt)]).content
+    lines = {l.split(':')[0].strip().upper(): l.split(':', 1)[1].strip()
+             for l in response.splitlines() if ':' in l}
+    has_code   = 'YES' in lines.get('Q1_HAS_CODE',   '').upper()
+    is_relevant = 'YES' in lines.get('Q2_IS_RELEVANT', '').upper()
+    reason     = lines.get('REASON', response[:200])
+    return {'relevant': has_code and is_relevant, 'has_code': has_code, 'is_relevant': is_relevant, 'reason': reason}
+
+
+def evaluate_project(
+    repo_url: str,
+    project_rubric: str,
+    project_details: str,
+    student_id: str,
+    classroom_id: int,
+) -> dict:
+    """
+    Strict project evaluation: relevance gate → rubric grading → lock.
+    """
+    from langchain_core.messages import HumanMessage
+    local_path = str(Path(Config.UPLOAD_FOLDER) / 'student_repos' / str(classroom_id) / str(student_id))
+    Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+
+    if not _clone_or_pull(repo_url, local_path):
+        return {'error': f'Could not clone {repo_url}. Ensure the repo is public.'}
+
+    summary = _get_repo_summary(local_path)
+    rel     = _check_repo_relevance(summary, project_details, project_rubric)
+
+    if not rel['relevant']:
+        reason_type = 'EMPTY_OR_NO_CODE' if not rel['has_code'] else 'WRONG_PROJECT'
+        msg = 'No meaningful code found.' if not rel['has_code'] else 'Repo not related to the project.'
+        feedback = (
+            f"AUTOMATIC REJECTION: {reason_type}\n"
+            f"SCORE: 0 | GRADE: F\n"
+            f"REASON: {msg}\n"
+            f"AI CHECK: {rel['reason']}\n"
+            f"Repo submitted: {repo_url}"
+        )
+        return {'student_id': student_id, 'classroom_id': classroom_id,
+                'repo_url': repo_url, 'analysis': feedback,
+                'score': 0.0, 'grade': 'F', 'locked': True, 'rejected': True}
+
+    llm = get_llm()
+    detail_block = f'PROJECT REQUIREMENTS:\n{project_details}\n\n' if project_details else ''
+    prompt = (
+        f"{detail_block}RUBRIC:\n{project_rubric}\n\n"
+        f"REPO ANALYSIS:\n{summary}\n\n"
+        "Evaluate the student project strictly against the rubric.\n"
+        "Respond in EXACTLY this format:\n"
+        "CRITERION_BREAKDOWN:\n- criterion: pts_earned/pts_total — reason\n"
+        "SCORE: 0-100\nGRADE: A/B/C/D/F\n"
+        "STRENGTHS: ...\nWEAKNESSES: ...\n"
+        "IMPROVEMENT_SUGGESTIONS:\n- ...\nDETAILED_FEEDBACK: ..."
+    )
+    analysis = llm.invoke([HumanMessage(content=prompt)]).content
+    score = 0.0
+    for line in analysis.splitlines():
+        if line.strip().upper().startswith('SCORE:'):
+            try:
+                score = float(line.split(':', 1)[1].strip().split()[0])
+            except (ValueError, IndexError):
+                pass
+            break
+    grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F'
+    print(f'[Project] LOCKED student={student_id} score={score} grade={grade}')
+    return {'student_id': student_id, 'classroom_id': classroom_id,
+            'repo_url': repo_url, 'analysis': analysis,
+            'score': score, 'grade': grade, 'locked': True, 'rejected': False}
+
+
+def analyze_project_advisory(
+    repo_url: str,
+    project_rubric: str,
+    student_id: str,
+    classroom_id: int,
+    project_details: str = '',
+) -> dict:
+    """
+    Advisory (non-locking) project analysis — gives next steps.
+    """
+    from langchain_core.messages import HumanMessage
+    local_path = str(Path(Config.UPLOAD_FOLDER) / 'student_repos' / str(classroom_id) / f'{student_id}_advisory')
+    Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+
+    if not _clone_or_pull(repo_url, local_path):
+        return {'error': f'Could not clone {repo_url}.'}
+
+    summary      = _get_repo_summary(local_path)
+    detail_block = f'PROJECT REQUIREMENTS:\n{project_details}\n\n' if project_details else ''
+    llm = get_llm()
+    prompt = (
+        f"{detail_block}RUBRIC:\n{project_rubric}\n\n"
+        f"REPO ANALYSIS:\n{summary}\n\n"
+        "Respond in EXACTLY this format:\n"
+        "COMPLETION_PERCENTAGE: 0-100\n"
+        "CURRENT_STATUS: ...\n"
+        "WHAT_IS_DONE_WELL:\n- ...\n"
+        "WHAT_IS_MISSING:\n- ...\n"
+        "NEXT_STEPS:\n1. ...\n"
+        "ESTIMATED_GRADE_IF_SUBMITTED_NOW: A/B/C/D/F — reason"
+    )
+    analysis = llm.invoke([HumanMessage(content=prompt)]).content
+    return {'student_id': student_id, 'classroom_id': classroom_id,
+            'repo_url': repo_url, 'analysis': analysis}
