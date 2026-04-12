@@ -258,11 +258,11 @@
                     <div style="display:flex;align-items:center;gap:var(--space-3);">
                       <span class="grade-badge grade-{{ 'A' if final >= 90 else 'B' if final >= 80 else 'C' if final >= 70 else 'D' if final >= 60 else 'F' }}">{{ final }}/{{ a.max_marks }}</span>
                       <span style="color:var(--color-success);font-size:var(--text-xs);font-weight:600;">✅ Graded</span>
-                      <a href="{{ url_for('assignments.assignment_result', classroom_id=classroom.id, assignment_id=a.id) }}" class="btn btn-primary btn-sm">View Result</a>
+                      <a href="{{ url_for('assignments.submission_result', sub_id=sub.id) }}" class="btn btn-primary btn-sm">View Result</a>
                     </div>
                   {% elif sub.locked %}
                     <span style="font-size:var(--text-xs);color:var(--color-text-muted);">⏳ Submitted — AI grading in progress...</span>
-                    <a href="{{ url_for('assignments.assignment_result', classroom_id=classroom.id, assignment_id=a.id) }}" class="btn btn-secondary btn-sm">Check Status</a>
+                    <a href="{{ url_for('assignments.submission_result', sub_id=sub.id) }}" class="btn btn-secondary btn-sm">Check Status</a>
                   {% else %}
                     <span style="font-size:var(--text-xs);color:var(--color-text-muted);">📤 Submitted</span>
                   {% endif %}
@@ -784,7 +784,6 @@ async function doSubmit() {
   const file = document.getElementById('submitFile').files[0];
   if (!file) { showToast('⚠️ Please select a PDF or DOCX file first.'); return; }
 
-  const allowed = ['application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
   const ext = file.name.split('.').pop().toLowerCase();
   if (!['pdf','doc','docx'].includes(ext)) {
     showToast('⚠️ Only PDF, DOC, or DOCX files are accepted.'); return;
@@ -841,7 +840,7 @@ async function doSubmit() {
     const poller = setInterval(async () => {
       polls++;
       try {
-        const r = await fetch(`/assignment/submission/${sub_id}/status`);
+        const r = await fetch(`/submission/${sub_id}/status`);
         const d = await r.json();
         if (d.graded || d.locked || polls >= 20) {
           clearInterval(poller);
