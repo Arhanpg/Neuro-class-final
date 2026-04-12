@@ -2,28 +2,37 @@
 NeuroClass AI Engine
 ====================
 RAG (Retrieval-Augmented Generation) + Fallback LLM manager.
-Mirrors the logic from NeuroClass_v4_Final.ipynb but adapted for
-a Flask web server (no CLI, no Colab, no interactive prompts).
-
-All indexes and uploads are stored locally under the paths defined
-in config.py (uploads/lectures/<classroom_id> and
-uploads/rag_indexes/<classroom_id>).
+Background training via threading so the Flask server stays responsive.
 """
 
 import os
-import re
+import threading
+import warnings
 from pathlib import Path
 
-# ── Lazy imports so the app starts even if heavy deps aren't installed yet ──
+# Suppress noisy PDF float-parsing warnings from pypdf
+warnings.filterwarnings('ignore', message='.*FloatObject.*')
+warnings.filterwarnings('ignore', message='.*could not convert string to float.*')
+
+# ── Module-level singletons ────────────────────────────────────────────────
 _llm_manager = None
 _embedding_fn = None
 _vector_stores: dict = {}  # classroom_id -> FAISS store
+
+# Training state tracker: classroom_id -> 'idle' | 'running' | 'done' | 'error'
+_training_status: dict = {}
+_training_lock = threading.Lock()
 
 
 def _get_embedding_fn():
     global _embedding_fn
     if _embedding_fn is None:
-        from langchain_community.embeddings import HuggingFaceEmbeddings
+        try:
+            # Prefer the non-deprecated langchain-huggingface package
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError:
+            # Fall back to langchain-community if not installed yet
+            from langchain_community.embeddings import HuggingFaceEmbeddings  # type: ignore
         _embedding_fn = HuggingFaceEmbeddings(
             model_name='all-MiniLM-L6-v2',
             model_kwargs={'device': 'cpu'},
@@ -38,9 +47,9 @@ def _get_llm_manager():
     return _llm_manager
 
 
-# ─────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
 # FallbackLLM: Gemini → OpenRouter → Groq-70B → Groq-8B
-# ─────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
 class FallbackLLM:
     FALLBACK_TRIGGERS = (
         'quota', 'rate', 'limit', '429', 'exceeded', 'not found',
@@ -145,54 +154,117 @@ class FallbackLLM:
         return self.models[self.active_idx][0] if self.models else 'None'
 
 
-# ─────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
 # RAG helpers
-# ─────────────────────────────────────────────────
-
-def _safe_id(classroom_id: int) -> str:
-    """Convert classroom_id to a filesystem-safe string."""
-    return str(classroom_id)
-
+# ─────────────────────────────────────────────────────────────────────────
 
 def _lecture_path(classroom_id: int) -> Path:
     from config import Config
-    return Path(Config.LECTURES_BASE_DIR) / _safe_id(classroom_id)
+    return Path(Config.LECTURES_BASE_DIR) / str(classroom_id)
 
 
 def _index_path(classroom_id: int) -> Path:
     from config import Config
-    return Path(Config.RAG_INDEX_DIR) / _safe_id(classroom_id)
+    return Path(Config.RAG_INDEX_DIR) / str(classroom_id)
 
 
 def is_indexed(classroom_id: int) -> bool:
-    """Return True if a FAISS index exists on disk for this classroom."""
     ip = _index_path(classroom_id)
     return (ip / 'index.faiss').exists()
 
 
-def build_rag_index(classroom_id: int) -> dict:
+def get_training_status(classroom_id: int) -> str:
+    """Returns: 'idle' | 'running' | 'done' | 'error:<msg>'"""
+    return _training_status.get(classroom_id, 'idle')
+
+
+def _run_build_index(classroom_id: int):
     """
-    Load all PDFs from the classroom's lecture folder,
-    chunk → embed → FAISS → save to disk.
-    Returns {'ok': bool, 'message': str}
+    Internal function that runs in a background thread.
+    Updates _training_status during the process.
     """
+    with _training_lock:
+        _training_status[classroom_id] = 'running'
+
+    print(f'[AI] Background training started for classroom {classroom_id}...')
+    try:
+        result = _build_index_sync(classroom_id)
+        if result.get('ok'):
+            _training_status[classroom_id] = 'done'
+            print(f'[AI] Training complete for classroom {classroom_id}: {result["message"]}')
+        else:
+            _training_status[classroom_id] = f'error:{result.get("error", "unknown")}'
+            print(f'[AI] Training failed for classroom {classroom_id}: {result.get("error")}')
+    except Exception as e:
+        _training_status[classroom_id] = f'error:{str(e)}'
+        print(f'[AI] Training exception for classroom {classroom_id}: {e}')
+
+    # Update the DB rag_indexed flag after training
+    try:
+        from app import mysql
+        import MySQLdb.cursors
+        if 'done' in _training_status.get(classroom_id, ''):
+            conn = mysql.connection
+            cur = conn.cursor()
+            cur.execute('UPDATE classrooms SET rag_indexed=1 WHERE id=%s', (classroom_id,))
+            conn.commit()
+            print(f'[AI] DB updated rag_indexed=1 for classroom {classroom_id}')
+    except Exception as db_err:
+        print(f'[AI] DB update skipped (will update on next request): {db_err}')
+
+
+def _build_index_sync(classroom_id: int) -> dict:
+    """Synchronous index build — call from background thread only."""
     lecture_dir = _lecture_path(classroom_id)
     if not lecture_dir.exists():
         return {'ok': False, 'error': 'No lecture folder found. Upload PDFs first.'}
 
     pdf_files = list(lecture_dir.glob('*.pdf'))
-    if not pdf_files:
-        return {'ok': False, 'error': 'No PDF files found in the lecture folder.'}
+    txt_files = list(lecture_dir.glob('*.txt'))
+    doc_files = list(lecture_dir.glob('*.docx')) + list(lecture_dir.glob('*.doc'))
+    all_files = pdf_files + txt_files + doc_files
+
+    if not all_files:
+        return {'ok': False, 'error': 'No files found. Upload lecture PDFs/DOCs/TXTs first.'}
 
     try:
-        from langchain_community.document_loaders import PyPDFDirectoryLoader
+        from langchain_community.document_loaders import (
+            PyPDFDirectoryLoader, TextLoader, Docx2txtLoader
+        )
         from langchain.text_splitter import RecursiveCharacterTextSplitter
         from langchain_community.vectorstores import FAISS
+        from langchain.schema import Document
 
-        loader = PyPDFDirectoryLoader(str(lecture_dir), glob='**/*.pdf', silent_errors=True)
-        docs = loader.load()
+        docs = []
+
+        # Load PDFs (suppress float parsing noise)
+        if pdf_files:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                loader = PyPDFDirectoryLoader(
+                    str(lecture_dir), glob='**/*.pdf', silent_errors=True
+                )
+                docs.extend(loader.load())
+
+        # Load TXT files
+        for f in txt_files:
+            try:
+                docs.extend(TextLoader(str(f), encoding='utf-8').load())
+            except Exception:
+                try:
+                    docs.extend(TextLoader(str(f), encoding='latin-1').load())
+                except Exception as e:
+                    print(f'[AI] Skipping {f.name}: {e}')
+
+        # Load DOCX files
+        for f in doc_files:
+            try:
+                docs.extend(Docx2txtLoader(str(f)).load())
+            except Exception as e:
+                print(f'[AI] Skipping {f.name}: {e}')
+
         if not docs:
-            return {'ok': False, 'error': 'PDFs found but no text could be extracted (scanned images?)'}
+            return {'ok': False, 'error': 'Files found but no text could be extracted (scanned images?)'}
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=120)
         chunks = splitter.split_documents(docs)
@@ -208,14 +280,52 @@ def build_rag_index(classroom_id: int) -> dict:
 
         return {
             'ok': True,
-            'message': f'✅ AI trained on {len(docs)} pages ({len(chunks)} chunks) from {len(pdf_files)} PDF(s).'
+            'message': (
+                f'Trained on {len(docs)} pages '
+                f'({len(chunks)} chunks) from {len(all_files)} file(s).'
+            )
         }
     except Exception as e:
         return {'ok': False, 'error': str(e)}
 
 
+def build_rag_index(classroom_id: int) -> dict:
+    """
+    PUBLIC API — called from Flask route.
+    Starts background training and returns immediately.
+    Returns {'ok': True, 'background': True, 'message': '...'}
+    or {'ok': False, 'error': '...'} if already running or no files.
+    """
+    status = get_training_status(classroom_id)
+    if status == 'running':
+        return {'ok': False, 'error': 'Training is already in progress. Please wait.'}
+
+    lecture_dir = _lecture_path(classroom_id)
+    if not lecture_dir.exists() or not any(lecture_dir.iterdir()):
+        return {'ok': False, 'error': 'No lecture files found. Upload PDFs first.'}
+
+    # Reset status and spawn thread
+    _training_status[classroom_id] = 'running'
+    t = threading.Thread(
+        target=_run_build_index,
+        args=(classroom_id,),
+        daemon=True,  # dies with the main process
+        name=f'rag-train-{classroom_id}',
+    )
+    t.start()
+
+    return {
+        'ok': True,
+        'background': True,
+        'message': (
+            '🚀 Training started in the background! '
+            'You can navigate away — it will keep running. '
+            'Check status with the "Check Status" button.'
+        )
+    }
+
+
 def _load_index(classroom_id: int) -> bool:
-    """Load FAISS index from disk into memory. Returns True on success."""
     if classroom_id in _vector_stores:
         return True
     ip = _index_path(classroom_id)
@@ -233,14 +343,8 @@ def _load_index(classroom_id: int) -> bool:
 
 
 def rag_query(classroom_id: int, question: str, context_data: dict = None) -> str:
-    """
-    Answer a student question using RAG on the class notes.
-    Falls back to general LLM if no index is available.
-    context_data can include {'assignments': [...], 'deadlines': {...}}
-    """
     llm = _get_llm_manager()
 
-    # Build extra context string from structured data (assignments, deadlines, etc.)
     extra_ctx = ''
     if context_data:
         if context_data.get('assignments'):
@@ -250,7 +354,6 @@ def rag_query(classroom_id: int, question: str, context_data: dict = None) -> st
         if context_data.get('class_name'):
             extra_ctx += f"\nClass: {context_data['class_name']}\n"
 
-    # Try RAG if index exists
     if _load_index(classroom_id):
         try:
             retriever = _vector_stores[classroom_id].as_retriever(
@@ -272,10 +375,8 @@ STUDENT QUESTION: {question}
 ANSWER:"""
             return llm.invoke(prompt)
         except Exception as e:
-            # Fall through to general answer
             print(f'[AI] RAG retrieval error: {e}')
 
-    # No index — general LLM answer
     prompt = f"""You are a helpful AI teaching assistant for NeuroClass.
 The course materials have not been indexed yet, so answer from general knowledge.
 Be helpful, clear, and concise.

@@ -18,15 +18,23 @@
 .typing-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--color-text-muted); margin:0 2px; animation:bounce 1.2s infinite; }
 .typing-dot:nth-child(2){animation-delay:.2s} .typing-dot:nth-child(3){animation-delay:.4s}
 @keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
-.train-btn { display:inline-flex; align-items:center; gap:var(--space-2); }
 .train-btn .spinner { width:16px; height:16px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; display:none; }
 @keyframes spin{to{transform:rotate(360deg)}}
+.material-item { display:flex; align-items:center; gap:var(--space-3); padding:var(--space-3) var(--space-4); border-bottom:1px solid var(--color-border); }
+.material-item:last-child { border-bottom:none; }
+.material-icon { font-size:1.4rem; flex-shrink:0; }
+.material-info { flex:1; min-width:0; }
+.material-name { font-weight:500; font-size:var(--text-sm); word-break:break-word; }
+.delete-btn { background:none; border:none; cursor:pointer; color:var(--color-text-faint); font-size:1rem; padding:var(--space-1) var(--space-2); border-radius:var(--radius-sm); transition:color var(--transition-interactive), background var(--transition-interactive); flex-shrink:0; }
+.delete-btn:hover { color:var(--color-error); background:var(--color-error-highlight); }
+.training-banner { display:flex; align-items:center; gap:var(--space-2); padding:var(--space-3) var(--space-4); background:var(--color-warning-highlight); border-radius:var(--radius-md); color:var(--color-warning); font-size:var(--text-sm); font-weight:500; }
+.training-banner .pulse { width:10px; height:10px; border-radius:50%; background:var(--color-warning); animation:pulse 1s ease-in-out infinite; flex-shrink:0; }
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="page-container">
-  <!-- Header -->
   <div class="page-header">
     <div>
       <a href="{{ url_for('dashboard') }}" class="btn btn-ghost btn-sm">← Dashboard</a>
@@ -34,37 +42,39 @@
       {% if classroom.subject %}<span class="badge badge-primary">{{ classroom.subject }}</span>{% endif %}
     </div>
     {% if session.role == 'instructor' %}
-    <div style="display:flex;gap:var(--space-2);align-items:center">
-      <div class="classroom-code-row">
-        <span class="code-label">Code:</span>
-        <span class="code-value" id="cls-code">{{ classroom.code }}</span>
-        <button class="btn-copy" onclick="copyCode('{{ classroom.code }}','cls-code')">Copy</button>
-      </div>
+    <div class="classroom-code-row">
+      <span class="code-label">Code:</span>
+      <span class="code-value" id="cls-code">{{ classroom.code }}</span>
+      <button class="btn-copy" onclick="copyCode('{{ classroom.code }}','cls-code')">Copy</button>
     </div>
     {% endif %}
   </div>
 
   <div class="classroom-layout">
-    <!-- LEFT: Main content -->
     <div class="classroom-main">
+
+      <!-- Training status banner (shown while training runs) -->
+      <div id="trainingBanner" class="training-banner" style="{% if training_status != 'running' %}display:none{% endif %}margin-bottom:var(--space-4)">
+        <div class="pulse"></div>
+        <span id="trainingBannerText">⏳ AI is training in the background — you can keep using the app!</span>
+      </div>
 
       <!-- AI Chatbot -->
       <div class="card">
         <div class="card-header">
           <h2>🤖 AI Assistant</h2>
-          <span class="badge {% if indexed %}badge-success{% else %}badge-warning{% endif %}">
-            {% if indexed %}Trained on your notes{% else %}Not trained yet{% endif %}
+          <span id="trainingBadge" class="badge {% if indexed %}badge-success{% elif training_status == 'running' %}badge-warning{% else %}badge-warning{% endif %}">
+            {% if indexed %}✅ Trained on your notes
+            {% elif training_status == 'running' %}⏳ Training in background…
+            {% else %}Not trained yet{% endif %}
           </span>
         </div>
         <div class="chat-window" id="chatWindow">
           <div class="chat-messages" id="chatMessages">
-            <!-- Pre-load history -->
             {% for msg in chat_history %}
             <div class="chat-bubble {{ msg.role }}">
               {{ msg.message }}
-              <div class="bubble-meta">
-                {{ msg.full_name }} · {{ msg.created_at.strftime('%H:%M') if msg.created_at }}
-              </div>
+              <div class="bubble-meta">{{ msg.full_name }} · {{ msg.created_at.strftime('%H:%M') if msg.created_at }}</div>
             </div>
             {% endfor %}
             {% if not chat_history %}
@@ -72,8 +82,10 @@
               👋 Hi! I'm your AI assistant for <strong>{{ classroom.name }}</strong>.
               {% if indexed %}
               I've been trained on the course materials. Ask me anything!
+              {% elif training_status == 'running' %}
+              I'm currently being trained on the course materials — I'll be ready shortly! You can still ask general questions.
               {% else %}
-              The instructor hasn't trained me on course materials yet, but I can still answer general questions!
+              The instructor hasn't trained me on course materials yet, but I can answer general questions!
               {% endif %}
             </div>
             {% endif %}
@@ -83,23 +95,12 @@
             <button class="chat-send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
           </div>
         </div>
-        {% if not indexed and session.role == 'instructor' %}
-        <div class="card-footer" style="margin-top:var(--space-3)">
-          <p class="text-muted" style="font-size:var(--text-sm)">Upload lecture PDFs and train the AI so students get answers grounded in your material.</p>
-          <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
-            <a href="{{ url_for('upload_lectures', classroom_id=classroom.id) }}" class="btn btn-secondary btn-sm">📤 Upload Lectures</a>
-            <button class="btn btn-primary btn-sm train-btn" id="trainBtn" onclick="trainAI({{ classroom.id }})">
-              <span class="spinner" id="trainSpinner"></span>
-              🧠 Train AI Now
-            </button>
-          </div>
-        </div>
-        {% elif indexed and session.role == 'instructor' %}
-        <div class="card-footer" style="margin-top:var(--space-3);display:flex;gap:var(--space-2)">
-          <a href="{{ url_for('upload_lectures', classroom_id=classroom.id) }}" class="btn btn-ghost btn-sm">📤 Add More Lectures</a>
-          <button class="btn btn-secondary btn-sm train-btn" id="trainBtn" onclick="trainAI({{ classroom.id }})">
-            <span class="spinner" id="trainSpinner"></span>
-            🔄 Re-Train AI
+        {% if session.role == 'instructor' %}
+        <div class="card-footer" style="margin-top:var(--space-3);display:flex;gap:var(--space-2);flex-wrap:wrap">
+          <a href="{{ url_for('upload_lectures', classroom_id=classroom.id) }}" class="btn btn-secondary btn-sm">📤 Upload Lectures</a>
+          <button class="btn btn-primary btn-sm train-btn" id="trainBtn" onclick="trainAI({{ classroom.id }})" {% if training_status == 'running' %}disabled{% endif %}>
+            <span class="spinner" id="trainSpinner" {% if training_status == 'running' %}style="display:inline-block"{% endif %}></span>
+            {% if training_status == 'running' %}⏳ Training…{% elif indexed %}🔄 Re-Train AI{% else %}🧠 Train AI Now{% endif %}
           </button>
         </div>
         {% endif %}
@@ -114,19 +115,25 @@
           {% endif %}
         </div>
         {% if materials %}
-        <div class="materials-list">
+        <div class="materials-list" id="materialsList">
           {% for m in materials %}
-          <div class="material-item">
+          <div class="material-item" id="mat-{{ m.id }}">
             <span class="material-icon">📄</span>
             <div class="material-info">
               <span class="material-name">{{ m.original_name }}</span>
               <span class="text-muted" style="font-size:var(--text-xs)">{{ m.uploaded_at.strftime('%b %d, %Y') if m.uploaded_at }}</span>
             </div>
+            {% if session.role == 'instructor' %}
+            <button class="delete-btn" title="Delete this file"
+              onclick="deleteLecture({{ classroom.id }}, {{ m.id }}, '{{ m.original_name|replace("'", "\\'")|replace('"', '\\"') }}')">
+              🗑
+            </button>
+            {% endif %}
           </div>
           {% endfor %}
         </div>
         {% else %}
-        <p class="text-muted" style="padding:var(--space-4)">
+        <p class="text-muted" id="noMaterialsMsg" style="padding:var(--space-4)">
           No lecture materials yet.
           {% if session.role == 'instructor' %}Upload your PDFs to train the AI chatbot.{% endif %}
         </p>
@@ -134,10 +141,8 @@
       </div>
     </div>
 
-    <!-- RIGHT: Sidebar -->
+    <!-- Sidebar -->
     <div class="classroom-sidebar">
-
-      <!-- Class info -->
       <div class="card">
         <h3 class="card-title">Class Info</h3>
         <dl class="info-list">
@@ -151,7 +156,6 @@
         </dl>
       </div>
 
-      <!-- Members -->
       <div class="card" style="margin-top:var(--space-4)">
         <h3 class="card-title">Members ({{ members|length }})</h3>
         {% if members %}
@@ -170,13 +174,14 @@
         <p class="text-muted">No students yet.</p>
         {% endif %}
       </div>
-
     </div>
   </div>
 </div>
 
 <script>
 const CLASSROOM_ID = {{ classroom.id }};
+let trainingPoller = null;
+let isTraining = {{ 'true' if training_status == 'running' else 'false' }};
 
 function scrollToBottom() {
   const msgs = document.getElementById('chatMessages');
@@ -188,10 +193,10 @@ function appendBubble(role, text, name) {
   const msgs = document.getElementById('chatMessages');
   const div = document.createElement('div');
   div.className = `chat-bubble ${role}`;
-  div.innerHTML = `${text.replace(/\n/g,'<br>')}<div class="bubble-meta">${name}</div>`;
+  div.innerHTML = `${text.replace(/\n/g,'<br>')}` +
+    `<div class="bubble-meta">${name}</div>`;
   msgs.appendChild(div);
   scrollToBottom();
-  return div;
 }
 
 function showTyping() {
@@ -211,17 +216,15 @@ function removeTyping() {
 
 async function sendMessage() {
   const input = document.getElementById('chatInput');
-  const btn = document.getElementById('sendBtn');
-  const msg = input.value.trim();
+  const btn   = document.getElementById('sendBtn');
+  const msg   = input.value.trim();
   if (!msg) return;
-
   input.value = '';
   btn.disabled = true;
   appendBubble('user', msg, 'You');
   showTyping();
-
   try {
-    const res = await fetch(`/classroom/${CLASSROOM_ID}/chat`, {
+    const res  = await fetch(`/classroom/${CLASSROOM_ID}/chat`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({message: msg})
@@ -238,28 +241,135 @@ async function sendMessage() {
   }
 }
 
-async function trainAI(classroomId) {
-  const btn = document.getElementById('trainBtn');
-  const spinner = document.getElementById('trainSpinner');
-  btn.disabled = true;
-  spinner.style.display = 'inline-block';
-  btn.childNodes[btn.childNodes.length-1].textContent = ' Training...';
+// ── Training ──────────────────────────────────────────────────────────────
 
-  try {
-    const res = await fetch(`/classroom/${classroomId}/train_ai`, {method:'POST'});
-    const data = await res.json();
-    if (data.ok) {
-      alert('✅ ' + data.message + '\n\nReload the page to see the updated AI status.');
-      location.reload();
-    } else {
-      alert('❌ ' + (data.error || 'Training failed'));
-    }
-  } catch(e) {
-    alert('❌ Network error during training.');
-  } finally {
+function setBannerVisible(visible) {
+  document.getElementById('trainingBanner').style.display = visible ? 'flex' : 'none';
+}
+
+function setBadgeText(text, cls) {
+  const badge = document.getElementById('trainingBadge');
+  badge.textContent = text;
+  badge.className = 'badge ' + cls;
+}
+
+function startPolling() {
+  if (trainingPoller) return;
+  trainingPoller = setInterval(async () => {
+    try {
+      const res  = await fetch(`/classroom/${CLASSROOM_ID}/train_status`);
+      const data = await res.json();
+      updateTrainingUI(data);
+    } catch(e) { /* ignore network hiccup */ }
+  }, 3000);
+}
+
+function stopPolling() {
+  if (trainingPoller) { clearInterval(trainingPoller); trainingPoller = null; }
+}
+
+function updateTrainingUI(data) {
+  const btn     = document.getElementById('trainBtn');
+  const spinner = document.getElementById('trainSpinner');
+  const banner  = document.getElementById('trainingBanner');
+  const bannerText = document.getElementById('trainingBannerText');
+
+  if (data.status === 'running') {
+    setBannerVisible(true);
+    setBadgeText('⏳ Training in background…', 'badge-warning');
+    btn.disabled = true;
+    spinner.style.display = 'inline-block';
+  } else if (data.status === 'done' || data.indexed) {
+    setBannerVisible(false);
+    setBadgeText('✅ Trained on your notes', 'badge-success');
     btn.disabled = false;
     spinner.style.display = 'none';
+    btn.innerHTML = '<span class="spinner" id="trainSpinner" style="display:none"></span>🔄 Re-Train AI';
+    stopPolling();
+    // Show a one-time toast
+    if (isTraining) {
+      isTraining = false;
+      showToast('✅ AI training complete! The chatbot is now trained on your course materials.');
+    }
+  } else if (data.status && data.status.startsWith('error')) {
+    setBannerVisible(false);
+    setBadgeText('⚠️ Training error — retry', 'badge-warning');
+    btn.disabled = false;
+    spinner.style.display = 'none';
+    stopPolling();
+    showToast('❌ Training error: ' + data.status.replace('error:', ''));
   }
+}
+
+async function trainAI(classroomId) {
+  const btn     = document.getElementById('trainBtn');
+  const spinner = document.getElementById('trainSpinner');
+  btn.disabled  = true;
+  spinner.style.display = 'inline-block';
+  btn.lastChild.textContent = ' Starting…';
+
+  try {
+    const res  = await fetch(`/classroom/${classroomId}/train_ai`, {method: 'POST'});
+    const data = await res.json();
+    if (data.ok) {
+      isTraining = true;
+      setBannerVisible(true);
+      setBadgeText('⏳ Training in background…', 'badge-warning');
+      showToast(data.message);
+      startPolling();
+    } else {
+      btn.disabled = false;
+      spinner.style.display = 'none';
+      showToast('❌ ' + (data.error || 'Training failed'));
+    }
+  } catch(e) {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+    showToast('❌ Network error during training.');
+  }
+}
+
+// Start polling automatically if training was already running when page loaded
+if (isTraining) { startPolling(); }
+
+// ── Delete Lecture ─────────────────────────────────────────────────────────
+
+async function deleteLecture(classroomId, materialId, name) {
+  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  try {
+    const res  = await fetch(`/classroom/${classroomId}/delete_lecture/${materialId}`, {method: 'POST'});
+    const data = await res.json();
+    if (data.ok) {
+      const el = document.getElementById(`mat-${materialId}`);
+      if (el) el.remove();
+      showToast(`🗑 ${data.message}`);
+      if (data.remaining === 0) {
+        const list = document.getElementById('materialsList');
+        if (list) list.innerHTML = '<p class="text-muted" style="padding:var(--space-4)">No lecture materials yet. Upload your PDFs to train the AI chatbot.</p>';
+      }
+    } else {
+      showToast('❌ ' + (data.error || 'Could not delete file.'));
+    }
+  } catch(e) {
+    showToast('❌ Network error.');
+  }
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+
+function showToast(msg) {
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.style.cssText = 'background:var(--color-surface-2);border:1px solid var(--color-border);color:var(--color-text);padding:12px 18px;border-radius:10px;font-size:14px;box-shadow:var(--shadow-md);max-width:340px;line-height:1.5;animation:slideUp 0.2s ease';
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => { toast.style.opacity='0'; toast.style.transition='opacity 0.3s'; setTimeout(()=>toast.remove(), 300); }, 4000);
 }
 
 function copyCode(code, elemId) {
