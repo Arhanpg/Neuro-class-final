@@ -2,10 +2,127 @@
 {% block title %}Create Assignment — {{ classroom.name }}{% endblock %}
 
 {% block content %}
-<div class="container py-4" style="max-width:800px">
+<style>
+/* ─── Create Assignment – Premium Design ─── */
+.ca-wrapper { max-width: 860px; margin: 0 auto; padding: 2rem 1rem 4rem; }
 
-  <nav aria-label="breadcrumb" class="mb-3">
-    <ol class="breadcrumb">
+.ca-hero {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  border-radius: 16px;
+  padding: 2rem 2.5rem;
+  margin-bottom: 2rem;
+  position: relative;
+  overflow: hidden;
+}
+.ca-hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 80% 20%, rgba(83,52,131,.35) 0%, transparent 60%);
+  pointer-events: none;
+}
+.ca-hero-title { color: #fff; font-size: 1.6rem; font-weight: 800; margin: 0; letter-spacing: -.02em; }
+.ca-hero-sub { color: rgba(255,255,255,.6); font-size: .9rem; margin: .25rem 0 0; }
+.ca-hero-badge {
+  display: inline-flex; align-items: center; gap: .4rem;
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
+  border-radius: 20px; padding: .25rem .85rem; color: rgba(255,255,255,.85); font-size: .8rem;
+  margin-top: .75rem;
+}
+
+.ca-card {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 2px 24px rgba(0,0,0,.07), 0 0 0 1px rgba(0,0,0,.04);
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+}
+.ca-card-header {
+  padding: .85rem 1.5rem;
+  background: #f8f9fc;
+  border-bottom: 1px solid #e9ecf1;
+  display: flex; align-items: center; gap: .6rem;
+}
+.ca-card-header .icon { font-size: 1.1rem; }
+.ca-card-header .label { font-weight: 700; font-size: .88rem; color: #1a1a2e; }
+.ca-card-header .badge-req {
+  margin-left: auto; font-size: .7rem; background: #fee2e2;
+  color: #991b1b; padding: .15rem .55rem; border-radius: 20px; font-weight: 600;
+}
+.ca-card-header .badge-ai {
+  margin-left: auto; font-size: .7rem; background: #fef3c7;
+  color: #92400e; padding: .15rem .55rem; border-radius: 20px; font-weight: 600;
+  display: flex; align-items: center; gap: .25rem;
+}
+.ca-card-body { padding: 1.25rem 1.5rem; }
+
+.ca-input, .ca-select, .ca-textarea {
+  width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px;
+  padding: .6rem .9rem; font-size: .93rem; color: #1e293b;
+  background: #fff; transition: border-color .18s, box-shadow .18s;
+  font-family: inherit;
+}
+.ca-input:focus, .ca-select:focus, .ca-textarea:focus {
+  outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+}
+.ca-textarea { resize: vertical; line-height: 1.6; }
+.ca-textarea.mono { font-family: 'Fira Code', 'Cascadia Code', monospace; font-size: .84rem; }
+
+.ca-label { font-size: .82rem; font-weight: 600; color: #475569; margin-bottom: .35rem; display: block; }
+
+.ca-row { display: grid; gap: 1rem; }
+.ca-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+.ca-row-2 { grid-template-columns: 1fr 1fr; }
+@media(max-width:640px) { .ca-row-3, .ca-row-2 { grid-template-columns: 1fr; } }
+
+.pipeline-banner {
+  background: linear-gradient(135deg, #eff6ff, #f0fdf4);
+  border: 1px solid #bfdbfe; border-radius: 12px; padding: 1.1rem 1.4rem;
+  margin-bottom: 1.25rem;
+}
+.pipeline-banner h6 { font-size: .83rem; font-weight: 700; color: #1e40af; margin-bottom: .6rem; }
+.pipeline-stages {
+  display: flex; align-items: center; flex-wrap: wrap; gap: .35rem;
+  margin-bottom: .6rem;
+}
+.ps-stage {
+  display: flex; align-items: center; gap: .3rem;
+  background: #fff; border: 1px solid #c7d2fe;
+  border-radius: 20px; padding: .22rem .75rem;
+  font-size: .75rem; font-weight: 600; color: #3730a3;
+}
+.ps-arrow { color: #93c5fd; font-size: .75rem; }
+.pipeline-rules { margin: 0; padding: 0 0 0 1.1rem; }
+.pipeline-rules li { font-size: .8rem; color: #374151; margin-bottom: .15rem; }
+
+.ca-footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: .75rem;
+  padding: 1.25rem 1.5rem;
+  background: #f8f9fc; border-top: 1px solid #e9ecf1;
+}
+.btn-create {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff; border: none; border-radius: 8px;
+  padding: .6rem 2rem; font-size: .92rem; font-weight: 700;
+  cursor: pointer; transition: opacity .18s, transform .12s;
+  display: flex; align-items: center; gap: .4rem;
+}
+.btn-create:hover { opacity: .9; transform: translateY(-1px); }
+.btn-cancel {
+  background: #fff; color: #64748b; border: 1.5px solid #e2e8f0;
+  border-radius: 8px; padding: .6rem 1.4rem; font-size: .92rem; font-weight: 600;
+  cursor: pointer; text-decoration: none; display: inline-flex; align-items: center;
+  transition: border-color .15s;
+}
+.btn-cancel:hover { border-color: #94a3b8; color: #374151; }
+
+.char-counter { font-size: .73rem; color: #94a3b8; text-align: right; margin-top: .2rem; }
+</style>
+
+<div class="ca-wrapper">
+
+  <!-- Breadcrumb -->
+  <nav aria-label="breadcrumb" class="mb-4">
+    <ol class="breadcrumb" style="font-size:.83rem">
       <li class="breadcrumb-item"><a href="{{ url_for('teacher_dashboard') }}">Dashboard</a></li>
       <li class="breadcrumb-item">
         <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}">{{ classroom.name }}</a>
@@ -22,102 +139,186 @@
     {% endfor %}
   {% endwith %}
 
-  <div class="card shadow-sm border-0">
-    <div class="card-header bg-primary text-white d-flex align-items-center gap-2 py-3">
-      <span style="font-size:1.4rem">&#128203;</span>
-      <h5 class="mb-0">New Assignment for <em>{{ classroom.name }}</em></h5>
+  <!-- Hero Banner -->
+  <div class="ca-hero">
+    <div class="ca-hero-title">&#128203; New Assignment</div>
+    <div class="ca-hero-sub">for <strong style="color:#a5b4fc">{{ classroom.name }}</strong></div>
+    <div class="ca-hero-badge">&#129302; AI Auto-Grading Enabled &bull; LangGraph Pipeline</div>
+  </div>
+
+  <form method="POST" enctype="multipart/form-data">
+
+    <!-- Card 1: Title -->
+    <div class="ca-card">
+      <div class="ca-card-header">
+        <span class="icon">&#128196;</span>
+        <span class="label">Assignment Title</span>
+        <span class="badge-req">Required</span>
+      </div>
+      <div class="ca-card-body">
+        <label class="ca-label" for="titleInput">Give a clear, descriptive title students will see</label>
+        <input id="titleInput" type="text" name="title" class="ca-input" required
+               placeholder="e.g. Module 3 &#8211; Neural Networks Implementation"
+               oninput="countChars(this,'titleCount',80)">
+        <div class="char-counter"><span id="titleCount">0</span>/80</div>
+      </div>
     </div>
 
-    <div class="card-body p-4">
-      <form method="POST" enctype="multipart/form-data">
+    <!-- Card 2: Instructions -->
+    <div class="ca-card">
+      <div class="ca-card-header">
+        <span class="icon">&#128221;</span>
+        <span class="label">Instructions &amp; Description</span>
+      </div>
+      <div class="ca-card-body">
+        <label class="ca-label" for="instrInput">Describe what students need to submit, allowed resources, format, etc.</label>
+        <textarea id="instrInput" name="assign_text" class="ca-textarea" rows="4"
+          placeholder="e.g. Submit a PDF report covering: implementation details, results, and analysis.
+Allowed: Python, PyTorch. Not allowed: pre-trained models."
+          oninput="countChars(this,'instrCount',2000)"></textarea>
+        <div class="char-counter"><span id="instrCount">0</span>/2000</div>
+      </div>
+    </div>
 
-        <!-- Title -->
-        <div class="mb-3">
-          <label class="form-label fw-semibold">Assignment Title <span class="text-danger">*</span></label>
-          <input type="text" name="title" class="form-control" required
-                 placeholder="e.g. Module 3 – Neural Networks">
+    <!-- Card 3: Grading Rubric (most important) -->
+    <div class="ca-card" style="border: 2px solid #e0e7ff;">
+      <div class="ca-card-header" style="background:#eef2ff">
+        <span class="icon">&#9878;</span>
+        <span class="label">Grading Rubric</span>
+        <span class="badge-ai">&#129302; AI grades strictly against this &bull; Required</span>
+      </div>
+      <div class="ca-card-body">
+        <label class="ca-label">List each criterion with its weight. The AI scores each one independently.</label>
+        <textarea name="rubric" class="ca-textarea mono" rows="10" required
+          id="rubricInput" oninput="countChars(this,'rubricCount',5000)"
+          placeholder="- Code Correctness (40%): All required functions implemented and work correctly
+- Documentation (20%): Code is well-commented; README explains usage
+- Efficiency (20%): Optimal algorithms; no unnecessary loops or redundancy
+- Testing (20%): Unit tests provided; edge cases handled"></textarea>
+        <div class="d-flex justify-content-between align-items-center mt-1">
+          <div style="font-size:.78rem;color:#6366f1">
+            &#9432; Missing criteria = 0 pts for that criterion. Off-topic submissions are capped at 30%.
+          </div>
+          <div class="char-counter"><span id="rubricCount">0</span>/5000</div>
         </div>
-
-        <!-- Description / Instructions -->
-        <div class="mb-3">
-          <label class="form-label fw-semibold">Instructions / Description</label>
-          <textarea name="assign_text" class="form-control" rows="4"
-            placeholder="Describe what students need to submit, expected format, resources allowed, etc."></textarea>
+        <!-- Rubric quick-fill templates -->
+        <div class="mt-2 d-flex flex-wrap gap-2" style="font-size:.76rem">
+          <span style="color:#64748b;font-weight:600">Quick templates:</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+                  onclick="fillRubric('coding')">💻 Coding</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+                  onclick="fillRubric('report')">📄 Report</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+                  onclick="fillRubric('project')">🚀 Project</button>
         </div>
+      </div>
+    </div>
 
-        <!-- Rubric — core field that AI uses -->
-        <div class="mb-3">
-          <label class="form-label fw-semibold">
-            Grading Rubric <span class="text-danger">*</span>
-            <span class="badge bg-warning text-dark ms-2 fw-normal" style="font-size:.75rem">
-              &#129302; AI grades strictly against this
-            </span>
-          </label>
-          <textarea name="rubric" class="form-control font-monospace" rows="9" required
-            placeholder="List criteria clearly with weights, e.g.:
-- Code Correctness (40%): All required functions work as expected
-- Documentation (20%): Code is commented; README is present
-- Efficiency (20%): Optimal algorithms are used
-- Testing (20%): Unit tests provided and passing"></textarea>
-          <div class="form-text">
-            The AI evaluates each submission <strong>criterion by criterion</strong> using this exact text.
-            If a criterion is absent, the student scores 0 for it. Be specific.
+    <!-- Card 4: Settings row -->
+    <div class="ca-card">
+      <div class="ca-card-header">
+        <span class="icon">⚙️</span>
+        <span class="label">Assignment Settings</span>
+      </div>
+      <div class="ca-card-body">
+        <div class="ca-row ca-row-3">
+          <div>
+            <label class="ca-label">Due Date</label>
+            <input type="date" name="due_date" class="ca-input">
+          </div>
+          <div>
+            <label class="ca-label">Max Marks</label>
+            <input type="number" name="max_marks" class="ca-input" value="100" min="1" max="1000">
+          </div>
+          <div>
+            <label class="ca-label">Max Attempts</label>
+            <input type="number" name="max_attempts" class="ca-input" value="1" min="1" max="10">
           </div>
         </div>
-
-        <!-- Due Date + Max Marks row -->
-        <div class="row g-3 mb-3">
-          <div class="col-md-6">
-            <label class="form-label fw-semibold">Due Date</label>
-            <input type="date" name="due_date" class="form-control">
+        <div class="ca-row ca-row-2 mt-3">
+          <div>
+            <label class="ca-label">Visibility</label>
+            <select name="visibility" class="ca-select">
+              <option value="published" selected>&#128994; Published (students can see)</option>
+              <option value="draft">&#128997; Draft (hidden from students)</option>
+              <option value="closed">&#128308; Closed (no new submissions)</option>
+            </select>
           </div>
-          <div class="col-md-3">
-            <label class="form-label fw-semibold">Max Marks</label>
-            <input type="number" name="max_marks" class="form-control" value="100" min="1" max="1000">
-          </div>
-          <div class="col-md-3">
-            <label class="form-label fw-semibold">Visibility</label>
-            <select name="visibility" class="form-select">
-              <option value="published" selected>Published</option>
-              <option value="draft">Draft (hidden)</option>
-              <option value="closed">Closed</option>
+          <div>
+            <label class="ca-label">AI Strictness</label>
+            <select name="strictness" class="ca-select">
+              <option value="balanced" selected>⚖️ Balanced</option>
+              <option value="strict">🔒 Strict (no partial credit)</option>
+              <option value="lenient">🕊️ Lenient (partial credit)</option>
             </select>
           </div>
         </div>
-
-        <!-- AI Pipeline Info Banner -->
-        <div class="alert alert-info d-flex gap-3 align-items-start mb-4">
-          <span style="font-size:1.6rem;line-height:1">&#129302;</span>
-          <div style="font-size:.9rem">
-            <strong>AI Auto-Grading Pipeline (LangGraph)</strong> — every student submission goes through:
-            <div class="d-flex flex-wrap gap-2 mt-2">
-              <span class="badge bg-light text-dark border px-2 py-1">&#128196; 1. Extract Text</span>
-              <span class="text-muted">&rarr;</span>
-              <span class="badge bg-light text-dark border px-2 py-1">&#128269; 2. Relevance Check</span>
-              <span class="text-muted">&rarr;</span>
-              <span class="badge bg-light text-dark border px-2 py-1">&#9878; 3. Rubric Grading</span>
-              <span class="text-muted">&rarr;</span>
-              <span class="badge bg-light text-dark border px-2 py-1">&#128274; 4. Lock &amp; Score</span>
-            </div>
-            <ul class="mb-0 mt-2 ps-3" style="font-size:.85rem">
-              <li>OFF-TOPIC submissions are capped at <strong>30/100</strong> automatically.</li>
-              <li>Missing documentation scores <strong>0</strong> for the documentation criterion.</li>
-              <li>Submission is <strong>permanently locked</strong> after grading — no resubmission.</li>
-              <li>You can override any AI grade at any time from the submissions dashboard.</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="d-flex gap-2 justify-content-end">
-          <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}"
-             class="btn btn-outline-secondary">Cancel</a>
-          <button type="submit" class="btn btn-primary px-4">
-            &#43; Create Assignment
-          </button>
-        </div>
-
-      </form>
+      </div>
     </div>
-  </div>
+
+    <!-- AI Pipeline Info -->
+    <div class="pipeline-banner">
+      <h6>&#129302; AI Auto-Grading Pipeline (LangGraph)</h6>
+      <div class="pipeline-stages">
+        <span class="ps-stage">&#128196; 1. Extract Text</span>
+        <span class="ps-arrow">&rarr;</span>
+        <span class="ps-stage">&#128269; 2. Relevance Check</span>
+        <span class="ps-arrow">&rarr;</span>
+        <span class="ps-stage">&#9878; 3. Rubric Grading</span>
+        <span class="ps-arrow">&rarr;</span>
+        <span class="ps-stage">&#128274; 4. Lock &amp; Score</span>
+      </div>
+      <ul class="pipeline-rules">
+        <li>Off-topic submissions are automatically capped at <strong>30/100</strong>.</li>
+        <li>Each rubric criterion is graded independently — missing = 0 for that criterion.</li>
+        <li>Submissions are <strong>permanently locked</strong> after grading.</li>
+        <li>You can <strong>override any AI grade</strong> at any time from the submissions dashboard.</li>
+      </ul>
+    </div>
+
+    <!-- Footer actions -->
+    <div class="ca-card" style="overflow:visible">
+      <div class="ca-footer">
+        <a href="{{ url_for('view_classroom', classroom_id=classroom.id) }}" class="btn-cancel">Cancel</a>
+        <button type="submit" class="btn-create">
+          <span>&#43;</span> Create Assignment
+        </button>
+      </div>
+    </div>
+
+  </form>
 </div>
+
+<script>
+function countChars(el, counterId, max) {
+  const len = el.value.length;
+  const el2 = document.getElementById(counterId);
+  if (!el2) return;
+  el2.textContent = len;
+  el2.style.color = len > max * .9 ? '#ef4444' : '#94a3b8';
+}
+
+const RUBRIC_TEMPLATES = {
+  coding: `- Code Correctness (40%): All required functions are implemented and produce correct output
+- Code Quality & Style (20%): Clean, readable code; proper naming conventions; no dead code
+- Documentation (20%): Each function is commented; a README explains how to run the code
+- Testing (20%): Unit tests provided; edge cases and error handling are tested`,
+  report: `- Content & Accuracy (40%): All required topics are covered accurately with supporting evidence
+- Structure & Clarity (25%): Logical flow; clear headings; easy to follow arguments
+- Analysis & Critical Thinking (20%): Insightful analysis; conclusions are well-supported
+- References & Formatting (15%): Proper citations; follows the required format (APA/IEEE)`,
+  project: `- Functionality (35%): All required features work end-to-end without errors
+- Code Architecture (25%): Modular, well-structured codebase; separation of concerns
+- Documentation (20%): README, inline comments, and API docs are complete and clear
+- Testing & Reliability (20%): Comprehensive tests; app handles edge cases gracefully`
+};
+
+function fillRubric(type) {
+  const el = document.getElementById('rubricInput');
+  if (el && RUBRIC_TEMPLATES[type]) {
+    el.value = RUBRIC_TEMPLATES[type];
+    countChars(el, 'rubricCount', 5000);
+  }
+}
+</script>
 {% endblock %}

@@ -4,9 +4,23 @@
 {% block content %}
 <style>
 .sub-row-expanded { background:#f8f9fa; }
-.ai-section-label { font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; margin-bottom:2px; }
+.ai-section-label { font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; margin-bottom:4px; }
 .criteria-pill { display:inline-block; background:#eef3ff; border:1px solid #c8d8ff; border-radius:20px; padding:2px 9px; font-size:.73rem; margin:2px 2px 2px 0; color:#2c5fd4; }
 .stage-pill { font-size:.68rem; padding:2px 8px; border-radius:20px; }
+
+/* PDF Viewer Modal */
+.pdf-modal-body { height: 78vh; padding: 0; background: #525659; }
+#pdfFrame { width: 100%; height: 100%; border: none; }
+
+/* Grade override inline badge */
+.teacher-badge { font-size: .68rem; background: #fff3cd; color: #856404; border: 1px solid #ffc107; border-radius: 20px; padding: 1px 7px; }
+
+/* Teacher submit banner */
+.teacher-submit-card {
+  background: linear-gradient(135deg,#f0fdf4,#ecfdf5);
+  border: 1.5px solid #86efac;
+  border-radius: 12px; padding: 1.1rem 1.4rem; margin-bottom: 1.5rem;
+}
 </style>
 
 <div class="container-fluid py-4" style="max-width:1200px">
@@ -27,6 +41,40 @@
       <a href="{{ url_for('assignments.edit_assignment', classroom_id=classroom.id, assignment_id=assignment.id) }}"
          class="btn btn-outline-secondary btn-sm">&#9998; Edit</a>
     </div>
+  </div>
+
+  <!-- Teacher: Submit on behalf of student -->
+  <div class="teacher-submit-card">
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <span style="font-size:1.2rem">&#128104;&#8205;&#127979;</span>
+      <strong style="font-size:.9rem">Teacher: Submit PDF for a Student</strong>
+      <span style="font-size:.75rem;color:#166534;margin-left:.3rem">(triggers AI grading pipeline)</span>
+    </div>
+    <form id="teacherSubmitForm" enctype="multipart/form-data">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label form-label-sm mb-1">Select Student</label>
+          <select name="student_id" class="form-select form-select-sm" id="teacherStudentSelect" required>
+            <option value="">-- choose student --</option>
+            {% for sub in submissions %}
+            <option value="{{ sub.student_id }}">{{ sub.student_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-5">
+          <label class="form-label form-label-sm mb-1">Upload PDF / DOC / DOCX</label>
+          <input type="file" name="submission_file" id="teacherFileInput"
+                 class="form-control form-control-sm" accept=".pdf,.doc,.docx" required>
+        </div>
+        <div class="col-md-3">
+          <button type="button" class="btn btn-success btn-sm w-100"
+                  onclick="teacherSubmit({{ classroom.id }}, {{ assignment.id }})">
+            &#128228; Submit &amp; Grade
+          </button>
+        </div>
+      </div>
+      <div id="teacherSubmitMsg" class="mt-2 d-none"></div>
+    </form>
   </div>
 
   <!-- Summary stats -->
@@ -85,7 +133,6 @@
         {% for sub in submissions %}
         {% set final = sub.teacher_grade if sub.teacher_grade is not none else sub.ai_grade %}
         {% set grade = sub.teacher_grade_label if sub.teacher_grade_label else sub.ai_grade_label %}
-        {% set grade_color = {'A':'text-success','B':'text-primary','C':'text-warning','D':'text-orange','F':'text-danger'}.get(grade, 'text-muted') %}
         <tr>
           <!-- Expand toggle -->
           <td class="text-center">
@@ -95,6 +142,9 @@
           <td>
             <div class="fw-semibold" style="font-size:.9rem">{{ sub.student_name }}</div>
             <div class="text-muted" style="font-size:.75rem">{{ sub.student_email }}</div>
+            {% if sub.teacher_grade is not none %}
+              <span class="teacher-badge">&#9998; Teacher override</span>
+            {% endif %}
           </td>
           <!-- Pipeline stages -->
           <td class="text-center">
@@ -113,11 +163,11 @@
                 <span class="badge bg-secondary stage-pill">&#128274;</span>
               </div>
             {% else %}
-              <span class="badge bg-warning text-dark" style="font-size:.72rem">&#9203; Grading…</span>
+              <span class="badge bg-warning text-dark" style="font-size:.72rem">&#9203; Grading&hellip;</span>
             {% endif %}
           </td>
-          <td class="text-center fw-semibold">{{ (sub.ai_grade or '&#8212;')|round(1) if sub.ai_grade is not none else '&#8212;' }}</td>
-          <td class="text-center fw-semibold">{{ (final or '&#8212;')|round(1) if final is not none else '&#8212;' }}</td>
+          <td class="text-center fw-semibold">{{ '%.1f' | format(sub.ai_grade) if sub.ai_grade is not none else '&#8212;' }}</td>
+          <td class="text-center fw-semibold">{{ '%.1f' | format(final) if final is not none else '&#8212;' }}</td>
           <td class="text-center">
             {% if grade %}
             <span class="badge fs-6 {{ 'bg-success' if grade=='A' else 'bg-primary' if grade=='B' else 'bg-warning text-dark' if grade=='C' else 'bg-danger' }}">{{ grade }}</span>
@@ -129,9 +179,13 @@
           <td class="text-center">
             <div class="d-flex gap-1 justify-content-center flex-wrap">
               <a href="{{ url_for('assignments.submission_result', sub_id=sub.id) }}"
-                 class="btn btn-sm btn-outline-info" style="font-size:.72rem;padding:2px 8px">View</a>
+                 class="btn btn-sm btn-outline-info" style="font-size:.72rem;padding:2px 8px">&#128196; View</a>
+              {% if sub.file_path %}
+              <button class="btn btn-sm btn-outline-secondary" style="font-size:.72rem;padding:2px 8px"
+                      onclick="openPdfViewer({{ sub.id }}, '{{ sub.filename|e }}')">&#128196; PDF</button>
+              {% endif %}
               <button class="btn btn-sm btn-outline-warning" style="font-size:.72rem;padding:2px 8px"
-                      onclick="openOverride({{ sub.id }}, {{ sub.ai_grade or 0 }})">Override</button>
+                      onclick="openOverride({{ sub.id }}, {{ sub.ai_grade or 0 }}, '{{ (sub.teacher_feedback or '')|e }}')">&#9998; Grade</button>
             </div>
           </td>
         </tr>
@@ -141,7 +195,6 @@
           <td colspan="8" class="p-0">
             <div class="p-3 bg-light border-top">
               {% if sub.ai_feedback %}
-
               <!-- Parsed criteria -->
               {% if sub.parsed_criteria %}
               <div class="mb-2">
@@ -151,13 +204,18 @@
                 {% endfor %}
               </div>
               {% endif %}
-
+              <!-- Teacher feedback if exists -->
+              {% if sub.teacher_feedback %}
+              <div class="mb-2">
+                <div class="ai-section-label">Teacher Feedback</div>
+                <div class="bg-warning bg-opacity-10 border border-warning rounded p-2" style="font-size:.82rem">{{ sub.teacher_feedback }}</div>
+              </div>
+              {% endif %}
               <!-- Full feedback textarea -->
               <div>
                 <div class="ai-section-label">Full AI Feedback</div>
                 <pre class="bg-white border rounded p-2" style="font-size:.78rem;white-space:pre-wrap;max-height:220px;overflow-y:auto">{{ sub.ai_feedback[:3000] }}</pre>
               </div>
-
               {% else %}
               <span class="text-muted fst-italic" style="font-size:.85rem">
                 {% if sub.locked %}No AI feedback stored.{% else %}AI grading still in progress&hellip;{% endif %}
@@ -174,12 +232,30 @@
   {% endif %}
 </div>
 
+<!-- PDF Viewer Modal -->
+<div class="modal fade" id="pdfModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content" style="height:90vh">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0" id="pdfModalTitle">&#128196; Student Submission PDF</h6>
+        <div class="ms-auto d-flex gap-2">
+          <a id="pdfDownloadLink" href="#" download class="btn btn-sm btn-outline-primary">&#11015; Download</a>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+      </div>
+      <div class="pdf-modal-body">
+        <iframe id="pdfFrame" title="PDF Viewer"></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Grade Override Modal -->
 <div class="modal fade" id="overrideModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">&#128104;&#8205;&#127979; Override Grade</h5>
+        <h5 class="modal-title">&#9998; Override / Edit Grade</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -187,16 +263,20 @@
         <div class="mb-3">
           <label class="form-label fw-semibold">New Score (0&#8211;{{ assignment.max_marks }})</label>
           <input type="number" id="overrideScore" class="form-control" min="0" max="{{ assignment.max_marks }}" step="0.5">
+          <div class="form-text">Leave unchanged to keep the AI score. Enter a new value to override.</div>
         </div>
         <div class="mb-2">
-          <label class="form-label fw-semibold">Teacher Feedback (optional)</label>
-          <textarea id="overrideFeedback" class="form-control" rows="3" placeholder="Add a comment for the student…"></textarea>
+          <label class="form-label fw-semibold">Teacher Feedback (shown to student)</label>
+          <textarea id="overrideFeedback" class="form-control" rows="4"
+                    placeholder="Add specific comments, corrections, or encouragement&hellip;"></textarea>
         </div>
         <div id="overrideMsg" class="d-none"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-warning fw-semibold" onclick="submitOverride()">Save Override</button>
+        <button class="btn btn-warning fw-semibold" onclick="submitOverride()">
+          &#128190; Save Override
+        </button>
       </div>
     </div>
   </div>
@@ -209,11 +289,25 @@ function toggleExpand(id) {
   row.style.display = row.style.display === 'none' ? '' : 'none';
 }
 
-function openOverride(subId, aiScore) {
-  document.getElementById('overrideSubId').value = subId;
-  document.getElementById('overrideScore').value = aiScore || '';
-  document.getElementById('overrideFeedback').value = '';
-  document.getElementById('overrideMsg').className = 'd-none';
+// ─── PDF Viewer ───
+function openPdfViewer(subId, filename) {
+  const frame = document.getElementById('pdfFrame');
+  const dlLink = document.getElementById('pdfDownloadLink');
+  const title  = document.getElementById('pdfModalTitle');
+  const url    = `/submission/${subId}/pdf`;
+  frame.src    = url;
+  dlLink.href  = url;
+  dlLink.setAttribute('download', filename || 'submission.pdf');
+  title.textContent = '\u{1F4C4} ' + (filename || 'Student Submission');
+  new bootstrap.Modal(document.getElementById('pdfModal')).show();
+}
+
+// ─── Grade Override ───
+function openOverride(subId, aiScore, existingFeedback) {
+  document.getElementById('overrideSubId').value    = subId;
+  document.getElementById('overrideScore').value    = aiScore || '';
+  document.getElementById('overrideFeedback').value = existingFeedback || '';
+  document.getElementById('overrideMsg').className  = 'd-none';
   new bootstrap.Modal(document.getElementById('overrideModal')).show();
 }
 
@@ -224,25 +318,60 @@ async function submitOverride() {
   const msgEl    = document.getElementById('overrideMsg');
 
   if (isNaN(grade)) {
-    msgEl.className = 'alert alert-danger';
-    msgEl.textContent = 'Please enter a valid numeric score.';
+    msgEl.className = 'alert alert-danger'; msgEl.textContent = 'Enter a valid numeric score.';
     return;
   }
-
   const resp = await fetch(`/assignment/submission/${subId}/override`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ grade, feedback })
   });
   const d = await resp.json();
-
   if (d.ok) {
     msgEl.className = 'alert alert-success';
-    msgEl.textContent = `Grade saved: ${d.grade} (${d.label}). Refreshing&#8230;`;
-    setTimeout(() => window.location.reload(), 1200);
+    msgEl.textContent = `\u2705 Grade saved: ${d.grade} (${d.label}). Refreshing\u2026`;
+    setTimeout(() => window.location.reload(), 1000);
   } else {
     msgEl.className = 'alert alert-danger';
     msgEl.textContent = d.error || 'Override failed.';
+  }
+}
+
+// ─── Teacher Submit on Behalf of Student ───
+async function teacherSubmit(classroomId, assignmentId) {
+  const studentId = document.getElementById('teacherStudentSelect').value;
+  const fileInput = document.getElementById('teacherFileInput');
+  const msgEl     = document.getElementById('teacherSubmitMsg');
+
+  if (!studentId) {
+    msgEl.className = 'alert alert-warning'; msgEl.classList.remove('d-none');
+    msgEl.textContent = 'Please select a student first.';
+    return;
+  }
+  if (!fileInput.files.length) {
+    msgEl.className = 'alert alert-warning'; msgEl.classList.remove('d-none');
+    msgEl.textContent = 'Please choose a file to upload.';
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('submission_file', fileInput.files[0]);
+
+  msgEl.className = 'alert alert-info'; msgEl.classList.remove('d-none');
+  msgEl.textContent = '\u23F3 Uploading and triggering AI grading pipeline\u2026';
+
+  const resp = await fetch(
+    `/classroom/${classroomId}/assignment/${assignmentId}/teacher_submit/${studentId}`,
+    { method: 'POST', body: fd }
+  );
+  const d = await resp.json();
+  if (d.ok) {
+    msgEl.className = 'alert alert-success';
+    msgEl.textContent = `\u2705 Submitted for student! AI is grading (sub_id: ${d.sub_id}). Refreshing\u2026`;
+    setTimeout(() => window.location.reload(), 2000);
+  } else {
+    msgEl.className = 'alert alert-danger';
+    msgEl.textContent = '\u274C ' + (d.error || 'Submission failed.');
   }
 }
 </script>
