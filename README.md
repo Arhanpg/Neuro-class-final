@@ -1,61 +1,59 @@
 # NeuroClass — AI-Powered Classroom Platform
 
-Flask + MySQL + LangChain + LangGraph + FAISS RAG
+Flask + MySQL web app for AI-enhanced classrooms.
 
 ## Quick Start
 
-### 1. Clone & install
+### 1. Install Python dependencies
 ```bash
-git clone https://github.com/Arhanpg/Neuro-class-final
-cd Neuro-class-final
 pip install -r requirements.txt
 ```
 
-### 2. Configure environment
-```bash
-cp .env.example .env
-# Edit .env — add MySQL password and API keys
-```
+### 2. Set up MySQL
 
-### 3. Setup MySQL database
+**Fresh install (no existing DB):**
 ```bash
 mysql -u root -p < setup_db.sql
 ```
-> ⚠️ If you already ran an older version of `setup_db.sql`, run it again — it uses `CREATE TABLE IF NOT EXISTS` so it's safe to re-run.
 
-### 4. Run
+**Already have the old DB and getting table errors?** Run the migration instead:
+```bash
+mysql -u root -p neuroclass < migrate.sql
+```
+
+### 3. Configure database password
+Edit `config.py`:
+```python
+MYSQL_PASSWORD = 'your_mysql_root_password'
+```
+
+### 4. Run the app
 ```bash
 python app.py
 ```
-Open http://localhost:5000
+Open [http://localhost:5000](http://localhost:5000)
 
 ---
 
-## Features (Phase 1 + 2)
+## Features (Phase 1)
+- Role-based auth: Instructor / Student
+- Instructor: Create classrooms, get unique join code
+- Student: Join classroom via code
+- Classroom dashboard with member list
+- Light / Dark mode toggle
 
-| Feature | Status |
-|---|---|
-| Login as Student / Instructor | ✅ |
-| Instructor creates classroom + auto code | ✅ |
-| Student joins via code | ✅ |
-| Instructor uploads lecture PDFs | ✅ |
-| One-click AI training (RAG / FAISS) | ✅ |
-| AI Chatbot in every classroom | ✅ |
-| Fallback LLM chain (Gemini → OpenRouter → Groq) | ✅ |
-| Dark / Light mode toggle | ✅ |
-| Assignment submission + AI grading | 🔜 Phase 3 |
-| Project submission via GitHub link | 🔜 Phase 3 |
-| Leaderboard | 🔜 Phase 3 |
+## Troubleshooting
 
-## AI Keys
-Get free API keys from:
-- **Gemini**: https://aistudio.google.com/app/apikey
-- **OpenRouter**: https://openrouter.ai (free Llama-3.3-70B)
-- **Groq**: https://console.groq.com
-
-Add to `.env`:
+### `Table 'neuroclass.lecture_materials' doesn't exist`
+You have an old database. Run:
+```bash
+mysql -u root -p neuroclass < migrate.sql
 ```
-GEMINI_API_KEY=...
-OPENROUTER_API_KEY=...
-GROQ_API_KEY=...
+
+### `No module named 'flask_mysqldb'`
+```bash
+pip install flask-mysqldb
 ```
+
+### `1045 Access denied for user 'root'`
+Check `MYSQL_PASSWORD` in `config.py`.

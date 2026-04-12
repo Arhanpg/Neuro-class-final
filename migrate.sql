@@ -1,61 +1,24 @@
--- NeuroClass Database Setup
--- Safe to run multiple times (uses IF NOT EXISTS everywhere)
--- Run: mysql -u root -p < setup_db.sql
+-- NeuroClass MIGRATION SCRIPT
+-- Run this if you already have the old database and just need the new tables
+-- mysql -u root -p neuroclass < migrate.sql
 
-CREATE DATABASE IF NOT EXISTS neuroclass CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE neuroclass;
 
--- Users
-CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    full_name VARCHAR(120) NOT NULL,
-    email VARCHAR(120) NOT NULL UNIQUE,
-    password_hash VARCHAR(64) NOT NULL,
-    role ENUM('student', 'instructor') NOT NULL DEFAULT 'student',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Classrooms
-CREATE TABLE IF NOT EXISTS classrooms (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(200) NOT NULL,
-    subject VARCHAR(120),
-    description TEXT,
-    code VARCHAR(12) NOT NULL UNIQUE,
-    instructor_id INT NOT NULL,
-    rag_indexed TINYINT(1) DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (instructor_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
--- Add rag_indexed if upgrading from old schema
+-- Add rag_indexed column to classrooms if missing
 SET @dbname = DATABASE();
-SET @tname = 'classrooms';
-SET @cname = 'rag_indexed';
 SET @exists = (
     SELECT COUNT(*) FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = @tname AND COLUMN_NAME = @cname
+    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'classrooms' AND COLUMN_NAME = 'rag_indexed'
 );
 SET @query = IF(@exists = 0,
     'ALTER TABLE classrooms ADD COLUMN rag_indexed TINYINT(1) DEFAULT 0',
-    'SELECT 1'
+    'SELECT "rag_indexed column already exists" AS info'
 );
 PREPARE stmt FROM @query;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
--- Classroom membership
-CREATE TABLE IF NOT EXISTS classroom_members (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    classroom_id INT NOT NULL,
-    user_id INT NOT NULL,
-    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_member (classroom_id, user_id),
-    FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
--- Lecture materials (PDFs uploaded by instructor)
+-- lecture_materials
 CREATE TABLE IF NOT EXISTS lecture_materials (
     id INT AUTO_INCREMENT PRIMARY KEY,
     classroom_id INT NOT NULL,
@@ -66,7 +29,7 @@ CREATE TABLE IF NOT EXISTS lecture_materials (
     FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE
 );
 
--- Chat history (RAG chatbot per classroom)
+-- chat_history
 CREATE TABLE IF NOT EXISTS chat_history (
     id INT AUTO_INCREMENT PRIMARY KEY,
     classroom_id INT NOT NULL,
@@ -78,7 +41,7 @@ CREATE TABLE IF NOT EXISTS chat_history (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Assignments posted by instructor
+-- assignments
 CREATE TABLE IF NOT EXISTS assignments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     classroom_id INT NOT NULL,
@@ -90,7 +53,7 @@ CREATE TABLE IF NOT EXISTS assignments (
     FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE
 );
 
--- Assignment submissions by students
+-- assignment_submissions
 CREATE TABLE IF NOT EXISTS assignment_submissions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     assignment_id INT NOT NULL,
@@ -107,7 +70,7 @@ CREATE TABLE IF NOT EXISTS assignment_submissions (
     FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Projects posted by instructor
+-- projects
 CREATE TABLE IF NOT EXISTS projects (
     id INT AUTO_INCREMENT PRIMARY KEY,
     classroom_id INT NOT NULL,
@@ -119,7 +82,7 @@ CREATE TABLE IF NOT EXISTS projects (
     FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE
 );
 
--- Project submissions (GitHub repo links) by students
+-- project_submissions
 CREATE TABLE IF NOT EXISTS project_submissions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     project_id INT NOT NULL,
@@ -134,4 +97,4 @@ CREATE TABLE IF NOT EXISTS project_submissions (
     FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-SELECT 'Database setup complete!' AS status;
+SELECT 'Migration complete! All tables are up to date.' AS status;
